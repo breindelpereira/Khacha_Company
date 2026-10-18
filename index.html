@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Khacha Company | Desi Highway Racer</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Google Fonts for sleek & stylish typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&family=Teko:wght@500;700&display=swap" rel="stylesheet">
+  <!-- Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <!-- 3D Canvas Container -->
+  <div id="game-container"></div>
+
+  <!-- HUD Overlay -->
+  <div id="hud" class="hud-layer hidden">
+    <!-- Top Bar -->
+    <div class="top-bar">
+      <div class="hud-card distance-card">
+        <span class="label">DISTANCE</span>
+        <span class="value" id="hud-distance">0.0 <small>KM</small></span>
+      </div>
+
+      <div class="hud-card timer-card">
+        <span class="label">TIME LEFT</span>
+        <span class="value timer-value" id="hud-timer">90<small>S</small></span>
+        <div class="timer-bar-container">
+          <div class="timer-bar" id="hud-timer-bar"></div>
+        </div>
+      </div>
+
+      <div class="hud-card score-card">
+        <span class="label">SCORE</span>
+        <span class="value" id="hud-score">0</span>
+      </div>
+
+      <button class="hud-card pause-btn-card" id="pause-btn" title="Pause Game [P / ESC]">
+        <span class="pause-icon">⏸</span>
+        <span class="pause-label">PAUSE</span>
+      </button>
+    </div>
+
+    <!-- Center Flow & Near Miss Notification -->
+    <div id="flow-toast" class="flow-toast">
+      <span class="flow-badge">NEAR MISS</span>
+      <span class="flow-points">+250 PTS</span>
+    </div>
+
+    <!-- Sting Red Energy Drink Boost Toast Notification -->
+    <div id="chai-toast" class="chai-toast">
+      <span class="chai-emoji">🔴⚡</span>
+      <div class="chai-info">
+        <span class="chai-title">STING ENERGY RED!</span>
+        <span class="chai-sub">+8 SECONDS &bull; SPEED BOOST!</span>
+      </div>
+    </div>
+
+    <!-- Vehicle Switch Toast Notification -->
+    <div id="vehicle-toast" class="vehicle-toast">
+      <span id="vehicle-toast-text">🛺 AUTO-RICKSHAW SELECTED</span>
+    </div>
+
+    <!-- Bottom Dashboard -->
+    <div class="bottom-bar">
+      <!-- Speedometer -->
+      <div class="speedo-container">
+        <div class="speedo-gauge">
+          <svg viewBox="0 0 160 100" class="speedo-svg">
+            <path class="gauge-bg" d="M 20 90 A 60 60 0 0 1 140 90" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="10" stroke-linecap="round"/>
+            <path class="gauge-fill" id="speedo-fill" d="M 20 90 A 60 60 0 0 1 140 90" fill="none" stroke="url(#speedGradient)" stroke-width="10" stroke-linecap="round" stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+            <defs>
+              <linearGradient id="speedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#38ef7d" />
+                <stop offset="60%" stop-color="#ffd200" />
+                <stop offset="100%" stop-color="#ff3366" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="speedo-text">
+            <span class="speedo-num" id="hud-speed">0</span>
+            <span class="speedo-unit">KM/H</span>
+            <span class="gear-badge" id="hud-gear">GEAR 1</span>
+          </div>
+        </div>
+        <div class="streak-pill" id="hud-streak-pill">FLOW STREAK x1</div>
+      </div>
+
+      <!-- Horn & Controls Action -->
+      <div class="action-controls">
+        <div class="horn-indicator" id="horn-btn">
+          <div class="horn-icon">🎺</div>
+          <div class="horn-info">
+            <span class="horn-title">HORN</span>
+            <span class="horn-key">[SPACE]</span>
+          </div>
+        </div>
+        <div class="control-hints">
+          <span>[W/A/S/D] or [ARROWS] Drive &bull; [SPACE] Horn</span>
+          <span>[P / ESC] Pause &bull; [1, 2, 3 / V] Switch Rides</span>
+          <span>[C] Camera &bull; [R] Reset</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attract Mode / Welcome Overlay (Spectator Magnet) -->
+  <div id="attract-overlay" class="overlay-screen">
+    <div class="cinema-letterbox top"></div>
+    <div class="attract-content">
+      <div class="title-badge">राष्ट्रीय राजमार्ग 44</div>
+      <h1 class="game-title">KHACHA COMPANY</h1>
+      <p class="game-subtitle">DESI HIGHWAY RACER &bull; POWERED BY STING ENERGY</p>
+      
+      <div class="attract-features">
+        <div class="feat-tag">🛺 3 Desi Rides</div>
+        <div class="feat-tag">🚛 "Horn OK Please" Trucks</div>
+        <div class="feat-tag">🐕 Roadside Desi Dogs & Dhabas</div>
+        <div class="feat-tag">⚡ Sting Energy Pickups</div>
+      </div>
+
+      <!-- Vehicle Selector -->
+      <div class="vehicle-picker-box">
+        <span class="v-picker-title">CHOOSE YOUR RIDE [CLICK OR PRESS 1, 2, OR 3]</span>
+        <div class="v-buttons" id="v-selector">
+          <button class="v-btn active" data-v="auto">
+            <span class="v-icon">🛺</span>
+            <div class="v-details">
+              <span class="v-name">AUTO-RICKSHAW</span>
+              <span class="v-spec">Agile &bull; 95 KM/H &bull; +8s Cutting Chai [1]</span>
+            </div>
+          </button>
+          <button class="v-btn" data-v="car">
+            <span class="v-icon">🚗</span>
+            <div class="v-details">
+              <span class="v-name">MARUTI SWIFT</span>
+              <span class="v-spec">Hatchback &bull; 118 KM/H &bull; +5s Sting Red [2]</span>
+            </div>
+          </button>
+          <button class="v-btn" data-v="truck">
+            <span class="v-icon">🚛</span>
+            <div class="v-details">
+              <span class="v-name">TATA TRUCK</span>
+              <span class="v-spec">Beast &bull; 82 KM/H &bull; +10s Kesari Vimal [3]</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="press-to-drive">
+        <div class="pulse-button" id="start-btn">TAKE THE WHEEL [PRESS ENTER OR SPACE]</div>
+        <span class="controller-hint">🎮 Gamepad & Keyboard Ready</span>
+      </div>
+    </div>
+    <div class="cinema-letterbox bottom"></div>
+  </div>
+
+  <!-- Game Over / Traffic Challan Card -->
+  <div id="gameover-overlay" class="overlay-screen hidden">
+    <div class="challan-card">
+      <div class="challan-header">
+        <div class="emblem">🇮🇳</div>
+        <h2>KHACHA COMPANY &bull; E-CHALLAN</h2>
+        <p class="sub">HIGHWAY TRAFFIC POLICE &bull; NH-44 SPEEDWAY</p>
+      </div>
+
+      <div class="challan-body">
+        <div class="challan-row">
+          <span>DISTANCE COVERED</span>
+          <strong id="final-distance">0.0 KM</strong>
+        </div>
+        <div class="challan-row">
+          <span>TOP SPEED RECORDED</span>
+          <strong id="final-speed">0 KM/H</strong>
+        </div>
+        <div class="challan-row">
+          <span>CLEAN NEAR-MISSES</span>
+          <strong id="final-nearmiss">0</strong>
+        </div>
+        <div class="challan-row">
+          <span>HORNS HONKED</span>
+          <strong id="final-horns">0</strong>
+        </div>
+        <div class="challan-divider"></div>
+        <div class="challan-row total-score">
+          <span>FINAL SCORE</span>
+          <span class="score-highlight" id="final-score">0</span>
+        </div>
+        <div class="challan-row best-score">
+          <span>TODAY'S BOOTH BEST</span>
+          <strong id="final-best">0</strong>
+        </div>
+        <div class="driver-rank-box" id="driver-rank">
+          RANK: HIGHWAY SULTAN
+        </div>
+      </div>
+
+      <!-- Vehicle Picker for next run -->
+      <div class="challan-v-picker">
+        <span class="challan-v-title">SELECT RIDE FOR NEXT RUN [PRESS 1, 2, OR 3]:</span>
+        <div class="v-buttons" id="challan-v-selector">
+          <button class="v-btn active" data-v="auto">🛺 AUTO (+8s Cutting Chai) [1]</button>
+          <button class="v-btn" data-v="car">🚗 SWIFT (+5s Sting Red) [2]</button>
+          <button class="v-btn" data-v="truck">🚛 TRUCK (+10s Kesari Vimal) [3]</button>
+        </div>
+      </div>
+
+      <button class="restart-btn" id="restart-btn">DRIVE AGAIN [ENTER / SPACE]</button>
+      <div class="countdown-hint">Auto-reset in <span id="auto-reset-timer">12</span>s for next player</div>
+    </div>
+  </div>
+
+  <!-- Pause Modal Overlay -->
+  <div id="pause-overlay" class="overlay-screen hidden">
+    <div class="pause-card">
+      <div class="pause-header">
+        <span class="pause-badge">KHACHA COMPANY PATROL</span>
+        <h2>PIT STOP &bull; GAME PAUSED</h2>
+        <p class="pause-sub">Chug a Sting or pop a Kesari Vimal & swap your ride.</p>
+      </div>
+
+      <div class="pause-body">
+        <!-- Vehicle Switcher inside Pause Menu -->
+        <div class="pause-v-section">
+          <span class="pause-section-title">SELECT RIDE & UNIQUE ENERGY BONUSES [PRESS 1, 2, 3]</span>
+          <div class="v-buttons" id="pause-v-selector">
+            <button class="v-btn" data-v="auto">
+              <span class="v-icon">🛺</span>
+              <div class="v-details">
+                <span class="v-name">AUTO-RICKSHAW</span>
+                <span class="v-spec">+8s Cutting Chai &bull; 95 KM/H &bull; [1]</span>
+              </div>
+            </button>
+            <button class="v-btn" data-v="car">
+              <span class="v-icon">🚗</span>
+              <div class="v-details">
+                <span class="v-name">MARUTI SWIFT</span>
+                <span class="v-spec">+5s Sting Red &bull; 118 KM/H &bull; [2]</span>
+              </div>
+            </button>
+            <button class="v-btn" data-v="truck">
+              <span class="v-icon">🚛</span>
+              <div class="v-details">
+                <span class="v-name">TATA TRUCK</span>
+                <span class="v-spec">+10s Kesari Vimal &bull; 82 KM/H &bull; [3]</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="pause-actions">
+          <button class="resume-btn" id="resume-btn">RESUME HIGHWAY [P / ESC / ENTER]</button>
+          <button class="restart-pause-btn" id="restart-pause-btn">RESTART RUN [R]</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Context Unmute Prompt -->
+  <div id="audio-prompt" class="audio-banner">
+    🔊 Click anywhere to activate Desi Horns & Engine sound
+  </div>
+
+  <!-- Game Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/vehicles.js"></script>
+  <script src="js/scenery.js"></script>
+  <script src="js/road.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

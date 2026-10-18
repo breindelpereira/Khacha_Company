@@ -1,0 +1,12 @@
+{
+  "name": "khacha-company",
+  "version": "1.0.0",
+  "description": "An atmospheric, high-energy Indian Highway Arcade Racer built with Three.js",
+  "scripts": {
+    "start": "python server.py",
+    "serve": "npx serve ."
+  },
+  "keywords": ["threejs", "game", "highway-racer", "traffic-racer", "khacha-company"],
+  "author": "",
+  "license": "MIT"
+}

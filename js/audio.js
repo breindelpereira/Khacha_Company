@@ -1,0 +1,288 @@
+// Procedural Web Audio API sound engine for NH Odyssey
+// Zero external files required — 100% reliable local offline playback
+
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.isMuted = false;
+    this.engineGain = null;
+    this.engineOsc1 = null;
+    this.engineOsc2 = null;
+    this.engineFilter = null;
+    this.isEngineRunning = false;
+    this.isHornPlaying = false;
+  }
+
+  init() {
+    if (this.ctx) return;
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioContext();
+    } catch (e) {
+      console.warn("Web Audio API not supported", e);
+    }
+  }
+
+  ensureContext() {
+    this.init();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  startEngine() {
+    if (!this.ctx || this.isEngineRunning) return;
+    this.ensureContext();
+
+    try {
+      // Dual oscillator setup for deep throaty 2-stroke / 4-stroke thrum
+      this.engineOsc1 = this.ctx.createOscillator();
+      this.engineOsc2 = this.ctx.createOscillator();
+      this.engineFilter = this.ctx.createBiquadFilter();
+      this.engineGain = this.ctx.createGain();
+
+      this.engineOsc1.type = 'sawtooth';
+      this.engineOsc2.type = 'triangle';
+
+      this.engineOsc1.frequency.setValueAtTime(45, this.ctx.currentTime);
+      this.engineOsc2.frequency.setValueAtTime(22.5, this.ctx.currentTime);
+
+      this.engineFilter.type = 'lowpass';
+      this.engineFilter.frequency.setValueAtTime(180, this.ctx.currentTime);
+
+      this.engineGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+
+      this.engineOsc1.connect(this.engineFilter);
+      this.engineOsc2.connect(this.engineFilter);
+      this.engineFilter.connect(this.engineGain);
+      this.engineGain.connect(this.ctx.destination);
+
+      this.engineOsc1.start();
+      this.engineOsc2.start();
+      this.isEngineRunning = true;
+    } catch (e) {
+      console.warn("Failed to start engine audio", e);
+    }
+  }
+
+  updateEngine(speedKmh, throttle, gear = 1) {
+    if (!this.ctx || !this.isEngineRunning) return;
+    const now = this.ctx.currentTime;
+
+    // Calculate gear RPM ratio (revs rise with speed, then drop on upshift)
+    let gearMin = 0, gearMax = 24;
+    if (gear === 2) { gearMin = 24; gearMax = 48; }
+    else if (gear === 3) { gearMin = 48; gearMax = 72; }
+    else if (gear === 4) { gearMin = 72; gearMax = 110; }
+
+    const gearProgress = THREE.MathUtils.clamp((speedKmh - gearMin) / (gearMax - gearMin), 0, 1);
+    const rpmBase = (gear === 1 ? 0 : 0.35) + gearProgress * 0.65;
+    const baseFreq = 48 + (rpmBase * 55) + (throttle ? 14 : 0);
+
+    this.engineOsc1.frequency.setTargetAtTime(baseFreq, now, 0.06);
+    this.engineOsc2.frequency.setTargetAtTime(baseFreq * 0.5, now, 0.06);
+    this.engineFilter.frequency.setTargetAtTime(220 + (rpmBase * 380), now, 0.08);
+    
+    const targetGain = 0.05 + Math.min(speedKmh / 100, 1) * 0.05 + (throttle ? 0.03 : 0);
+    this.engineGain.gain.setTargetAtTime(targetGain, now, 0.08);
+  }
+
+  // Sparkling electric powerup sound on collecting Khacha Energy Drink
+  playChaiPickup() {
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    // Energetic rising chord (C5, G5, C6, E6)
+    const notes = [523.25, 783.99, 1046.5, 1318.5];
+    notes.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle'; // Crisp electric timbre
+      osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+      gain.gain.setValueAtTime(0, now + idx * 0.05);
+      gain.gain.linearRampToValueAtTime(0.22, now + idx * 0.05 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.38);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + idx * 0.05);
+      osc.stop(now + idx * 0.05 + 0.42);
+    });
+
+    // Sub-bass electric energy pulse
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(140, now);
+    subOsc.frequency.exponentialRampToValueAtTime(320, now + 0.25);
+    subGain.gain.setValueAtTime(0.25, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    subOsc.connect(subGain);
+    subGain.connect(this.ctx.destination);
+    subOsc.start(now);
+    subOsc.stop(now + 0.32);
+  }
+
+  stopEngine() {
+    if (!this.isEngineRunning) return;
+    try {
+      this.engineOsc1.stop();
+      this.engineOsc2.stop();
+      this.isEngineRunning = false;
+    } catch(e) {}
+  }
+
+  // Authentic Indian Multi-Tone Musical Brass Horn (Pee-Poo-Pee-Poo)
+  playHorn() {
+    this.ensureContext();
+    if (!this.ctx || this.isHornPlaying) return;
+    this.isHornPlaying = true;
+
+    const now = this.ctx.currentTime;
+    const masterGain = this.ctx.createGain();
+    masterGain.gain.setValueAtTime(0.2, now);
+    masterGain.connect(this.ctx.destination);
+
+    // Multi-harmonic horn chords
+    const notes = [
+      { f1: 523.25, f2: 659.25, start: 0, dur: 0.14 },    // C5 + E5
+      { f1: 659.25, f2: 783.99, start: 0.14, dur: 0.14 }, // E5 + G5
+      { f1: 523.25, f2: 659.25, start: 0.28, dur: 0.14 }, // C5 + E5
+      { f1: 783.99, f2: 1046.5, start: 0.42, dur: 0.35 }  // G5 + C6 flourish
+    ];
+
+    notes.forEach(note => {
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const filter = this.ctx.createBiquadFilter();
+      const noteGain = this.ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'triangle';
+      osc1.frequency.setValueAtTime(note.f1, now + note.start);
+      osc2.frequency.setValueAtTime(note.f2, now + note.start);
+
+      // Brass envelope filter
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(note.f1 * 1.5, now + note.start);
+      filter.Q.setValueAtTime(3.0, now + note.start);
+
+      noteGain.gain.setValueAtTime(0, now + note.start);
+      noteGain.gain.linearRampToValueAtTime(0.3, now + note.start + 0.02);
+      noteGain.gain.exponentialRampToValueAtTime(0.001, now + note.start + note.dur);
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(noteGain);
+      noteGain.connect(masterGain);
+
+      osc1.start(now + note.start);
+      osc2.start(now + note.start);
+      osc1.stop(now + note.start + note.dur);
+      osc2.stop(now + note.start + note.dur);
+    });
+
+    setTimeout(() => {
+      this.isHornPlaying = false;
+    }, 750);
+  }
+
+  // Smooth wind rush / whoosh on high-speed near-miss
+  playNearMiss() {
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const bufferSize = this.ctx.sampleRate * 0.4;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(600, now);
+    filter.frequency.exponentialRampToValueAtTime(1400, now + 0.2);
+    filter.frequency.exponentialRampToValueAtTime(400, now + 0.4);
+    filter.Q.setValueAtTime(4.0, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    noise.start(now);
+  }
+
+  // Suspension clunk over pothole / speed bump
+  playBump() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, now);
+    osc.frequency.exponentialRampToValueAtTime(35, now + 0.15);
+
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+
+  // Dramatic crash impact with metal crunch
+  playCrash() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // Sub thud
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(20, now + 0.4);
+    oscGain.gain.setValueAtTime(0.4, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.connect(oscGain);
+    oscGain.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+
+    // Metal clatter noise
+    const bufferSize = this.ctx.sampleRate * 0.6;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.15));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(800, now);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+    noise.start(now);
+  }
+}
+
+window.soundEngine = new SoundEngine();
