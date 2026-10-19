@@ -723,9 +723,14 @@ class Game {
     this.underglowLight.position.set(playerPos.x, playerPos.y + 0.2, playerPos.z);
     this.underglowLight.intensity = underglowIntensity;
 
-    // Update HUD Environment badge
+    // Update HUD Environment badge (soft highlight on change, then quiet fade)
     if (this.dom.hudBiomeBadge && this.dom.hudBiomeBadge.innerText !== badgeText) {
       this.dom.hudBiomeBadge.innerText = badgeText;
+      this.dom.hudBiomeBadge.classList.add('highlight');
+      clearTimeout(this.biomeBadgeTimeout);
+      this.biomeBadgeTimeout = setTimeout(() => {
+        if (this.dom.hudBiomeBadge) this.dom.hudBiomeBadge.classList.remove('highlight');
+      }, 2500);
     }
   }
 

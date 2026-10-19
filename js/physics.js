@@ -461,10 +461,90 @@ class TrafficManager {
       playerLength = 3.85;
     }
 
+    // 0. Gather all road hazards & toll plazas ahead for AI vehicle awareness
+    const roadObstacles = [];
+    if (this.road && this.road.chunks) {
+      this.road.chunks.forEach(chunk => {
+        if (chunk.userData && chunk.userData.scenery) {
+          chunk.userData.scenery.forEach(item => {
+            if (!item.userData) return;
+            if (item.userData.isHazard && item.userData.hazardType === 'barricade') {
+              roadObstacles.push({
+                type: 'barricade',
+                z: item.position.z,
+                laneX: item.position.x + (item.userData.laneX || 0)
+              });
+            } else if (item.userData.isHazard && item.userData.isTractor) {
+              roadObstacles.push({
+                type: 'tractor',
+                z: item.position.z,
+                laneX: item.position.x
+              });
+            } else if (item.userData.isTollPlaza) {
+              roadObstacles.push({
+                type: 'toll',
+                z: item.position.z,
+                openLanes: item.userData.openLanes || [-1.8, 1.8],
+                closedLanes: [-5.4, 5.4]
+              });
+            }
+          });
+        }
+      });
+    }
+
     this.vehicles.forEach(v => {
       const distAheadOfPlayer = playerZ - v.mesh.position.z; // Positive = vehicle is in front of player
 
-      // 1. Inter-AI Traffic Awareness: Detect closest vehicle ahead in same lane
+      // 1. Static Hazard & Toll Plaza Avoidance for AI
+      let hazardAhead = false;
+      roadObstacles.forEach(obs => {
+        const gapZ = v.mesh.position.z - obs.z; // Positive if obs is in front of v
+        if (gapZ > 0 && gapZ < 65) {
+          if (obs.type === 'toll') {
+            // Approaching Toll Plaza: AI must pick an OPEN green lane!
+            const inOpenLane = obs.openLanes.some(l => Math.abs(v.targetLaneOffset - l) < 1.0);
+            if (!inOpenLane) {
+              const bestLane = obs.openLanes.reduce((prev, curr) =>
+                Math.abs(curr - v.laneOffset) < Math.abs(prev - v.laneOffset) ? curr : prev
+              );
+              v.targetLaneOffset = bestLane;
+              v.laneChangeSpeed = 5.2;
+              v.laneChangeTimer = 4.0;
+              hazardAhead = true;
+            }
+            if (gapZ < 28) {
+              v.targetSpeedUnits = Math.min(v.targetSpeedUnits, 13.5); // Slow down for toll transit
+            }
+          } else if (obs.type === 'barricade' || obs.type === 'tractor') {
+            const obsOffset = obs.laneX - this.road.getRoadCurve(obs.z);
+            const inHazardLane = Math.abs(v.targetLaneOffset - obsOffset) < 1.9 || Math.abs(v.laneOffset - obsOffset) < 1.9;
+            if (inHazardLane) {
+              hazardAhead = true;
+              const safeLanes = this.lanes.filter(l => Math.abs(l - obsOffset) > 1.8);
+              if (safeLanes.length > 0) {
+                // Find clear safe lane not occupied by another car
+                const clearLanes = safeLanes.filter(sl => !this.vehicles.some(other =>
+                  other !== v && Math.abs(other.laneOffset - sl) < 1.8 && Math.abs(other.mesh.position.z - v.mesh.position.z) < 18
+                ));
+                const candidates = clearLanes.length > 0 ? clearLanes : safeLanes;
+                candidates.sort((a, b) => Math.abs(a - v.laneOffset) - Math.abs(b - v.laneOffset));
+                v.targetLaneOffset = candidates[0];
+                v.laneChangeSpeed = 5.2;
+                v.laneChangeTimer = 3.5;
+              }
+              if (gapZ < 25) {
+                v.targetSpeedUnits = Math.min(v.targetSpeedUnits, 10.0);
+                if (gapZ < 10) {
+                  v.speedUnits = Math.min(v.speedUnits, 8.0);
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // 2. Inter-AI Traffic Awareness: Detect closest vehicle ahead in same or merging lane
       let closestAhead = null;
       let minGapZ = 999;
       this.vehicles.forEach(other => {
@@ -472,29 +552,52 @@ class TrafficManager {
         const gapZ = v.mesh.position.z - other.mesh.position.z; // other is ahead of v if gapZ > 0
         if (gapZ > 0 && gapZ < minGapZ) {
           const latDist = Math.abs(other.laneOffset - v.laneOffset);
-          if (latDist < 1.9) {
+          const targetLatDist = Math.abs(other.targetLaneOffset - v.targetLaneOffset);
+          if (latDist < 1.9 || targetLatDist < 1.5) {
             minGapZ = gapZ;
             closestAhead = other;
           }
         }
       });
 
-      // 2. Slow down if approaching a slower vehicle ahead in the same lane
-      if (closestAhead && minGapZ < 26) {
-        if (v.speedUnits > closestAhead.speedUnits) {
-          v.targetSpeedUnits = closestAhead.speedUnits * 0.94;
-          // Prompt an early lane change to overtake
-          if (v.laneChangeTimer > 0.8) {
-            v.laneChangeTimer = 0.3 + Math.random() * 0.5;
-          }
+      // 3. Responsive progressive & emergency braking to prevent rear-ending other vehicles
+      if (closestAhead && minGapZ < 28) {
+        if (minGapZ < 8) {
+          // Emergency brake! Prevent rear-end collision
+          v.speedUnits = Math.min(v.speedUnits, closestAhead.speedUnits * 0.85);
+          v.targetSpeedUnits = closestAhead.speedUnits * 0.8;
+        } else if (minGapZ < 15) {
+          v.targetSpeedUnits = Math.min(v.targetSpeedUnits, closestAhead.speedUnits * 0.92);
+        } else if (v.speedUnits > closestAhead.speedUnits) {
+          v.targetSpeedUnits = closestAhead.speedUnits * 0.96;
         }
-      } else if (v.brakeTimer <= 0 && !v.isYielding) {
+        // Early overtake decision if blocked ahead
+        if (v.laneChangeTimer > 0.8 && !hazardAhead) {
+          v.laneChangeTimer = 0.2 + Math.random() * 0.4;
+        }
+      } else if (!hazardAhead && v.brakeTimer <= 0 && !v.isYielding) {
         v.targetSpeedUnits = v.baseSpeedUnits;
       }
 
-      // 3. Autonomous Lane Changing & Overtaking Logic
+      // 4. Lateral Anti-Clipping: prevent side-by-side overlap during lane changes
+      this.vehicles.forEach(other => {
+        if (other === v) return;
+        const dZ = Math.abs(v.mesh.position.z - other.mesh.position.z);
+        if (dZ < 4.5) {
+          const dX = v.laneOffset - other.laneOffset;
+          const minLatDist = (v.width + other.width) * 0.5 + 0.35;
+          if (Math.abs(dX) < minLatDist && Math.abs(dX) > 0.01) {
+            // Push gently apart laterally so vehicles don't merge into each other
+            const push = Math.sign(dX) * (minLatDist - Math.abs(dX)) * delta * 3.0;
+            v.laneOffset += push;
+            v.targetLaneOffset = v.laneOffset;
+          }
+        }
+      });
+
+      // 5. Autonomous Lane Changing & Overtaking Logic
       v.laneChangeTimer -= delta;
-      if (v.laneChangeTimer <= 0) {
+      if (v.laneChangeTimer <= 0 && !hazardAhead) {
         v.laneChangeTimer = 3.5 + Math.random() * 5.0; // Reset decision timer
 
         const currLaneIdx = this.lanes.findIndex(l => Math.abs(l - v.targetLaneOffset) < 0.5);
@@ -502,18 +605,29 @@ class TrafficManager {
         if (currLaneIdx > 0) candidateIndices.push(currLaneIdx - 1);
         if (currLaneIdx < this.lanes.length - 1) candidateIndices.push(currLaneIdx + 1);
 
-        // Filter lanes that are clear
+        // Filter lanes that are clear of both cars and road hazards
         const safeCandidates = candidateIndices.filter(idx => {
           const testLane = this.lanes[idx];
-          const blocked = this.vehicles.some(other => {
+          const blockedByCar = this.vehicles.some(other => {
             if (other === v) return false;
             const sameLane = Math.abs(other.laneOffset - testLane) < 1.8;
             const closeDist = Math.abs(other.mesh.position.z - v.mesh.position.z);
-            return sameLane && closeDist < 20;
+            return sameLane && closeDist < 18;
+          });
+          const blockedByObs = roadObstacles.some(obs => {
+            const gapZ = v.mesh.position.z - obs.z;
+            if (gapZ > 0 && gapZ < 45) {
+              if (obs.type === 'toll') {
+                return !obs.openLanes.some(l => Math.abs(testLane - l) < 1.0);
+              }
+              const obsOffset = obs.laneX - this.road.getRoadCurve(obs.z);
+              return Math.abs(testLane - obsOffset) < 1.8;
+            }
+            return false;
           });
           const playerInLane = Math.abs(this.playerLateralOffset - testLane) < 1.8;
           const playerClose = Math.abs(playerZ - v.mesh.position.z) < 16;
-          return !blocked && !(playerInLane && playerClose);
+          return !blockedByCar && !blockedByObs && !(playerInLane && playerClose);
         });
 
         if (safeCandidates.length > 0) {
@@ -531,9 +645,9 @@ class TrafficManager {
         }
       }
 
-      // 4. "MESS WITH THE PLAYER" AI BEHAVIORS
+      // 6. "MESS WITH THE PLAYER" AI BEHAVIORS
       // Triggers when the player is rapidly closing in from behind
-      if (!isAutopilot && distAheadOfPlayer > 14 && distAheadOfPlayer < 55 && this.playerSpeed > (v.speedUnits + 3.0)) {
+      if (!isAutopilot && distAheadOfPlayer > 14 && distAheadOfPlayer < 55 && this.playerSpeed > (v.speedUnits + 3.0) && !hazardAhead) {
         v.messCooldown -= delta;
         if (v.messCooldown <= 0 && !v.isYielding) {
           v.messCooldown = 5.0 + Math.random() * 7.0;
@@ -542,16 +656,25 @@ class TrafficManager {
           const roll = Math.random();
 
           if (latDistanceToPlayer > 1.8 && latDistanceToPlayer < 4.2 && roll < 0.45) {
-            // TACTIC 1: THE SURPRISE CUT-OFF
-            // Cuts directly into the player's path ahead!
+            // TACTIC 1: THE SURPRISE CUT-OFF (only into lanes clear of obstacles)
             const targetLane = this.lanes.reduce((prev, curr) =>
               Math.abs(curr - this.playerLateralOffset) < Math.abs(prev - this.playerLateralOffset) ? curr : prev
             );
-            v.targetLaneOffset = targetLane;
-            v.laneChangeSpeed = v.type === 'car' ? 5.2 : (v.type === 'auto' ? 4.6 : 2.8);
+            const hazardInLane = roadObstacles.some(obs => {
+              const gapZ = v.mesh.position.z - obs.z;
+              if (gapZ > 0 && gapZ < 40) {
+                if (obs.type === 'toll') return !obs.openLanes.some(l => Math.abs(targetLane - l) < 1.0);
+                const obsOffset = obs.laneX - this.road.getRoadCurve(obs.z);
+                return Math.abs(targetLane - obsOffset) < 1.8;
+              }
+              return false;
+            });
+            if (!hazardInLane) {
+              v.targetLaneOffset = targetLane;
+              v.laneChangeSpeed = v.type === 'car' ? 5.2 : (v.type === 'auto' ? 4.6 : 2.8);
+            }
           } else if (latDistanceToPlayer > 1.8 && roll < 0.75) {
             // TACTIC 2: THE SQUEEZE / LANE DRIFTER
-            // Drifts toward player to make the corridor razor thin
             const driftDir = Math.sign(this.playerLateralOffset - v.laneOffset);
             v.wanderPhase += driftDir * 1.5;
             v.wanderAmp = Math.min(v.wanderAmp * 1.6, 0.65);
@@ -563,7 +686,7 @@ class TrafficManager {
         }
       }
 
-      // 5. Handle Brake Timer
+      // 7. Handle Brake Timer
       if (v.brakeTimer > 0) {
         v.brakeTimer -= delta;
         if (v.brakeTimer <= 0) {
@@ -571,7 +694,7 @@ class TrafficManager {
         }
       }
 
-      // 6. Smooth Lateral Steering Execution
+      // 8. Smooth Lateral Steering Execution
       const dOffset = v.targetLaneOffset - v.laneOffset;
       let latSpeed = 0;
       if (Math.abs(dOffset) > 0.04) {

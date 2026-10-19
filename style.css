@@ -587,28 +587,40 @@ body, html {
   border: 1px solid rgba(56, 239, 125, 0.3);
 }
 
-/* Biome & Night Atmosphere Badge */
+/* Biome & Night Atmosphere Badge (Sleek Top Bezel Pin - Never Blocks Road) */
 .biome-pill-container {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  margin-top: 6px;
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
   pointer-events: none;
+  z-index: 20;
 }
 
 .biome-pill {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #38bdf8;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(10px);
-  padding: 6px 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 3px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0.75;
   transition: all 0.4s ease;
+}
+
+.biome-pill.highlight {
+  opacity: 1;
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
 }
 
 /* FASTag Electronic Toll Cleared Toast */
