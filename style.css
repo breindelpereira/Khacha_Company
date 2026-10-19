@@ -587,6 +587,89 @@ body, html {
   border: 1px solid rgba(56, 239, 125, 0.3);
 }
 
+/* Biome & Night Atmosphere Badge */
+.biome-pill-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 6px;
+  pointer-events: none;
+}
+
+.biome-pill {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #38bdf8;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(10px);
+  padding: 6px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+  text-transform: uppercase;
+  transition: all 0.4s ease;
+}
+
+/* FASTag Electronic Toll Cleared Toast */
+.fastag-toast {
+  position: absolute;
+  top: 33%;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.95), rgba(15, 23, 42, 0.95));
+  backdrop-filter: blur(14px);
+  padding: 12px 28px;
+  border-radius: 24px;
+  border: 2px solid #facc15;
+  box-shadow: 0 0 45px rgba(2, 132, 199, 0.75), 0 0 25px rgba(250, 204, 21, 0.5);
+  transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 28;
+}
+
+.fastag-toast.active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.fastag-logo-box {
+  background: #facc15;
+  color: #0f172a;
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.fastag-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.fastag-title {
+  font-family: 'Teko', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.fastag-sub {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #fef08a;
+}
+
 /* Iconic Sting Red Energy Drink Boost Toast */
 .chai-toast {
   position: absolute;

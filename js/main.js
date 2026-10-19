@@ -55,7 +55,9 @@ class Game {
       pauseOverlay: document.getElementById('pause-overlay'),
       pauseBtn: document.getElementById('pause-btn'),
       resumeBtn: document.getElementById('resume-btn'),
-      restartPauseBtn: document.getElementById('restart-pause-btn')
+      restartPauseBtn: document.getElementById('restart-pause-btn'),
+      hudBiomeBadge: document.getElementById('hud-biome-badge'),
+      fastagToast: document.getElementById('fastag-toast')
     };
 
     this.selectedVehicle = 'auto';
@@ -95,9 +97,9 @@ class Game {
 
   initEnvironment() {
     // Warm Indian Twilight / Golden Hour Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffeedd, 0x8a6344, 0.85);
-    hemiLight.position.set(0, 100, 0);
-    this.scene.add(hemiLight);
+    this.hemiLight = new THREE.HemisphereLight(0xffeedd, 0x8a6344, 0.85);
+    this.hemiLight.position.set(0, 100, 0);
+    this.scene.add(this.hemiLight);
 
     // Low Golden Sun
     this.sunLight = new THREE.DirectionalLight(0xffbe76, 1.4);
@@ -113,6 +115,20 @@ class Game {
     this.sunLight.shadow.camera.top = d;
     this.sunLight.shadow.camera.bottom = -d;
     this.scene.add(this.sunLight);
+
+    // 4. Vehicle Headlights (Dual Forward Beams for Night Atmosphere)
+    this.headlightTarget = new THREE.Object3D();
+    this.scene.add(this.headlightTarget);
+
+    this.headlightL = new THREE.SpotLight(0xfffaed, 1.2, 75, Math.PI / 6.5, 0.45, 1.2);
+    this.headlightL.castShadow = false;
+    this.headlightR = new THREE.SpotLight(0xfffaed, 1.2, 75, Math.PI / 6.5, 0.45, 1.2);
+    this.headlightR.castShadow = false;
+    this.scene.add(this.headlightL, this.headlightR);
+
+    // 5. Vehicle Neon Underglow (Maruti Swift Electric Cyan / Truck Amber / Auto Emerald)
+    this.underglowLight = new THREE.PointLight(0x00f0ff, 0.6, 6.0, 1.6);
+    this.scene.add(this.underglowLight);
 
     // Distant Mountain Ridgelines along Horizon (Western Ghats silhouette)
     this.mountainGroup = new THREE.Group();
@@ -611,6 +627,108 @@ class Game {
     }, 1800);
   }
 
+  showFastagToast() {
+    if (!this.dom.fastagToast) return;
+    this.dom.fastagToast.classList.add('active');
+    clearTimeout(this.fastagTimeout);
+    this.fastagTimeout = setTimeout(() => {
+      this.dom.fastagToast.classList.remove('active');
+    }, 2200);
+  }
+
+  // Dynamic Day-to-Night Highway Atmosphere & Biome Transitions
+  // Phase 1 (0 - 900m): Golden Sunset over Rural Foothills
+  // Phase 2 (900m - 1800m): Violet Dusk & Twilight over Expressway Corridor
+  // Phase 3 (1800m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
+  updateEnvironment(playerZ) {
+    if (!this.traffic || !this.traffic.player) return;
+    const playerPos = this.traffic.player.position;
+    const dist = Math.abs(playerZ);
+
+    let skyCol = new THREE.Color();
+    let sunCol = new THREE.Color();
+    let sunIntensity = 1.4;
+    let hemiSky = new THREE.Color();
+    let hemiGround = new THREE.Color();
+    let headIntensity = 0.5;
+    let underglowIntensity = 0.4;
+    let badgeText = '';
+
+    if (dist < 900) {
+      const t = dist / 900;
+      skyCol.lerpColors(new THREE.Color(0xd99b66), new THREE.Color(0x9333ea), t * 0.7);
+      sunCol.lerpColors(new THREE.Color(0xffbe76), new THREE.Color(0xf43f5e), t);
+      sunIntensity = THREE.MathUtils.lerp(1.4, 0.85, t);
+      hemiSky.lerpColors(new THREE.Color(0xffeedd), new THREE.Color(0xa78bfa), t);
+      hemiGround.lerpColors(new THREE.Color(0x8a6344), new THREE.Color(0x312e81), t);
+      headIntensity = THREE.MathUtils.lerp(0.4, 1.4, t);
+      underglowIntensity = THREE.MathUtils.lerp(0.2, 1.0, t);
+      badgeText = '🌅 RURAL FOOTHILLS • GOLDEN SUNSET';
+    } else if (dist < 1800) {
+      const t = (dist - 900) / 900;
+      skyCol.lerpColors(new THREE.Color(0x6b21a8), new THREE.Color(0x1e1b4b), t);
+      sunCol.lerpColors(new THREE.Color(0xf43f5e), new THREE.Color(0x38bdf8), t);
+      sunIntensity = THREE.MathUtils.lerp(0.85, 0.35, t);
+      hemiSky.lerpColors(new THREE.Color(0x818cf8), new THREE.Color(0x1e293b), t);
+      hemiGround.lerpColors(new THREE.Color(0x312e81), new THREE.Color(0x0f172a), t);
+      headIntensity = THREE.MathUtils.lerp(1.4, 2.4, t);
+      underglowIntensity = THREE.MathUtils.lerp(1.0, 2.0, t);
+      badgeText = '🌆 EXPRESSWAY CORRIDOR • DUSK TWILIGHT';
+    } else {
+      const t = Math.min((dist - 1800) / 600, 1.0);
+      skyCol.lerpColors(new THREE.Color(0x1e1b4b), new THREE.Color(0x070b14), t);
+      sunCol.setHex(0x38bdf8); // Moonlight
+      sunIntensity = 0.32;
+      hemiSky.setHex(0x0f172a);
+      hemiGround.setHex(0x020617);
+      headIntensity = 2.8;
+      underglowIntensity = 2.4;
+      badgeText = '🌃 NEON URBAN OUTSKIRTS • MIDNIGHT';
+    }
+
+    // Apply colors to scene background & fog
+    this.scene.background.copy(skyCol);
+    if (this.scene.fog) {
+      this.scene.fog.color.copy(skyCol);
+    }
+    this.sunLight.color.copy(sunCol);
+    this.sunLight.intensity = sunIntensity;
+    if (this.hemiLight) {
+      this.hemiLight.color.copy(hemiSky);
+      this.hemiLight.groundColor.copy(hemiGround);
+    }
+
+    // Update forward vehicle spotlights
+    const hw = (this.selectedVehicle === 'truck') ? 0.95 : 0.65;
+    const yOff = (this.selectedVehicle === 'truck') ? 1.2 : 0.55;
+    const zAhead = (this.selectedVehicle === 'truck') ? -2.8 : -1.8;
+
+    this.headlightTarget.position.set(playerPos.x, playerPos.y + 0.3, playerPos.z - 36);
+    this.headlightTarget.updateMatrixWorld();
+
+    this.headlightL.position.set(playerPos.x - hw, playerPos.y + yOff, playerPos.z + zAhead);
+    this.headlightL.intensity = headIntensity;
+    this.headlightL.target = this.headlightTarget;
+
+    this.headlightR.position.set(playerPos.x + hw, playerPos.y + yOff, playerPos.z + zAhead);
+    this.headlightR.intensity = headIntensity;
+    this.headlightR.target = this.headlightTarget;
+
+    // Underglow Neon (Maruti Swift gets electric cyan; Truck gets amber; Auto gets emerald)
+    let underColor = 0x00f0ff;
+    if (this.selectedVehicle === 'truck') underColor = 0xf59e0b;
+    else if (this.selectedVehicle === 'auto') underColor = 0x22c55e;
+
+    this.underglowLight.color.setHex(underColor);
+    this.underglowLight.position.set(playerPos.x, playerPos.y + 0.2, playerPos.z);
+    this.underglowLight.intensity = underglowIntensity;
+
+    // Update HUD Environment badge
+    if (this.dom.hudBiomeBadge && this.dom.hudBiomeBadge.innerText !== badgeText) {
+      this.dom.hudBiomeBadge.innerText = badgeText;
+    }
+  }
+
   updateHUD(stats) {
     this.dom.hudDistance.innerHTML = stats.distanceKm + ' <small>KM</small>';
     this.dom.hudScore.innerText = stats.score.toLocaleString();
@@ -756,6 +874,11 @@ class Game {
 
     this.updateParticles(delta);
 
+    // Dynamic Night & Neon Highway Atmosphere update
+    if (this.traffic && this.traffic.player) {
+      this.updateEnvironment(this.traffic.player.position.z);
+    }
+
     if (this.state === 'ATTRACT') {
       // Autopilot cruise
       this.traffic.update(delta, this.input, true);
@@ -777,6 +900,10 @@ class Game {
         const bonus = stats.chaiTimeBonus || (this.selectedVehicle === 'truck' ? 10 : (this.selectedVehicle === 'auto' ? 8 : 5));
         this.sessionTimer = Math.min(this.sessionTimer + bonus, 99);
         this.showChaiToast(this.selectedVehicle, bonus);
+      }
+
+      if (stats.fastagCleared) {
+        this.showFastagToast();
       }
 
       // Emit exhaust smoke when accelerating

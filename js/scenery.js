@@ -750,6 +750,498 @@ class SceneryBuilder {
     group.add(c1, c2, c3);
     return group;
   }
+
+  // 11. FASTag TOLL PLAZA CANOPY TEXTURE
+  createTollBannerTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Indian Expressway Blue Header
+    ctx.fillStyle = '#0284c7';
+    ctx.fillRect(0, 0, 512, 128);
+
+    // Gold & White Trim Border
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(6, 6, 500, 116);
+
+    // FASTag Logo / Badge
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(20, 20, 110, 42);
+    ctx.font = '900 24px Impact, Arial Black, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'center';
+    ctx.fillText('FASTag', 75, 50);
+
+    // Title text
+    ctx.font = 'bold 30px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('ELECTRONIC TOLL PLAZA', 145, 52);
+
+    // Subtitle
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillStyle = '#fef08a';
+    ctx.fillText('NH-44 SPEEDWAY ★ KHACHA COMPANY EXPRESSWAY', 40, 96);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
+  }
+
+  // 12. FASTag HIGHWAY TOLL PLAZA STRUCTURE
+  createTollPlaza(options = {}) {
+    const group = new THREE.Group();
+
+    if (!this.tollBannerTexture) {
+      this.tollBannerTexture = this.createTollBannerTexture();
+    }
+
+    const matConcrete = new THREE.MeshLambertMaterial({ color: 0x64748b });
+    const matCanopy = new THREE.MeshLambertMaterial({ color: 0x0369a1 });
+    const matSteel = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3, metalness: 0.8 });
+    const matGlass = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+    const matGreenLED = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+    const matRedLED = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const matBarrier = new THREE.MeshLambertMaterial({ color: 0xfacc15 });
+
+    // Massive Overhead Canopy (Spanning across 18m highway)
+    const canopyGeo = new THREE.BoxGeometry(19.0, 0.9, 6.0);
+    const canopy = new THREE.Mesh(canopyGeo, matCanopy);
+    canopy.position.set(0, 6.0, 0);
+    group.add(canopy);
+
+    // Canopy Fascia Signs (Front & Back)
+    const bannerGeo = new THREE.PlaneGeometry(18.6, 0.85);
+    const bannerMat = new THREE.MeshBasicMaterial({ map: this.tollBannerTexture, side: THREE.DoubleSide });
+    const bannerF = new THREE.Mesh(bannerGeo, bannerMat);
+    bannerF.position.set(0, 6.0, 3.01);
+    const bannerB = bannerF.clone();
+    bannerB.position.z = -3.01;
+    bannerB.rotation.y = Math.PI;
+    group.add(bannerF, bannerB);
+
+    // Concrete Pillars & Toll Islands
+    // Road lanes are [-5.4, -1.8, 1.8, 5.4]. Divider islands are at [-7.2, -3.6, 0, 3.6, 7.2]
+    const islandX = [-7.2, -3.6, 0.0, 3.6, 7.2];
+    islandX.forEach((x, idx) => {
+      // Concrete island base
+      const islGeo = new THREE.BoxGeometry(0.75, 0.65, 5.5);
+      const isl = new THREE.Mesh(islGeo, matConcrete);
+      isl.position.set(x, 0.32, 0);
+      group.add(isl);
+
+      // Toll Operator Kiosk on middle islands (indices 1, 2, 3)
+      if (idx >= 1 && idx <= 3) {
+        const kioskGeo = new THREE.BoxGeometry(0.65, 2.2, 1.8);
+        const kiosk = new THREE.Mesh(kioskGeo, matSteel);
+        kiosk.position.set(x, 1.7, 0);
+        group.add(kiosk);
+
+        // Kiosk window glass
+        const winGeo = new THREE.BoxGeometry(0.67, 0.9, 1.4);
+        const win = new THREE.Mesh(winGeo, matGlass);
+        win.position.set(x, 1.8, 0);
+        group.add(win);
+      }
+
+      // Vertical Steel Support Column up to canopy
+      const colGeo = new THREE.CylinderGeometry(0.12, 0.14, 5.5);
+      const col = new THREE.Mesh(colGeo, matSteel);
+      col.position.set(x, 3.0, 0);
+      group.add(col);
+    });
+
+    // 4 Toll Lanes corresponding to player lanes: [-5.4, -1.8, 1.8, 5.4]
+    const lanes = [-5.4, -1.8, 1.8, 5.4];
+    // Randomize: 2 lanes are OPEN (green arrow), 2 lanes are CLOSED (red X with boom barrier)
+    const openLanes = options.openLanes || (Math.random() < 0.5 ? [-5.4, 1.8] : [-1.8, 5.4]);
+    const laneStatuses = {};
+
+    lanes.forEach(laneX => {
+      const isOpen = openLanes.includes(laneX);
+      laneStatuses[laneX] = isOpen;
+
+      // Overhead Electronic LED Display Box
+      const ledBoxGeo = new THREE.BoxGeometry(1.4, 0.8, 0.2);
+      const ledBox = new THREE.Mesh(ledBoxGeo, matGlass);
+      ledBox.position.set(laneX, 5.2, 2.9);
+      group.add(ledBox);
+
+      // LED Indicator Light
+      const ledSignGeo = new THREE.PlaneGeometry(1.1, 0.65);
+      const ledSign = new THREE.Mesh(ledSignGeo, isOpen ? matGreenLED : matRedLED);
+      ledSign.position.set(laneX, 5.2, 3.02);
+      group.add(ledSign);
+
+      // Boom Barrier
+      const barrierGeo = new THREE.CylinderGeometry(0.045, 0.045, 3.2, 8);
+      barrierGeo.rotateZ(Math.PI / 2);
+      const barrier = new THREE.Mesh(barrierGeo, matBarrier);
+
+      if (isOpen) {
+        // Barrier raised up at 75 degree angle! Safe passage
+        barrier.position.set(laneX + 0.6, 2.2, 0);
+        barrier.rotation.z = Math.PI * 0.42;
+      } else {
+        // Barrier DOWN across lane! Dangerous crash hazard
+        barrier.position.set(laneX, 0.85, 0);
+
+        // Blinking red beacon light on top of barrier
+        const redBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), matRedLED);
+        redBeacon.position.set(laneX, 1.05, 0);
+        group.add(redBeacon);
+      }
+      group.add(barrier);
+    });
+
+    group.userData = {
+      isTollPlaza: true,
+      openLanes: openLanes,
+      laneStatuses: laneStatuses,
+      passed: false,
+      zLength: 6.0
+    };
+
+    return group;
+  }
+
+  // 13. HIGHWAY CONSTRUCTION BARRICADES & HAZARD ZONE
+  createConstructionZone(laneX = -1.8) {
+    const group = new THREE.Group();
+
+    // Red & White Striped Barricade
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Bold diagonal red & white hazard stripes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = '#dc2626';
+    for (let x = -128; x < 384; x += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 24, 0);
+      ctx.lineTo(x + 24 - 40, 128);
+      ctx.lineTo(x - 40, 128);
+      ctx.fill();
+    }
+    // "DIVERSION" Banner in middle
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(20, 42, 216, 44);
+    ctx.font = '900 20px Impact, Arial Black, sans-serif';
+    ctx.fillStyle = '#facc15';
+    ctx.textAlign = 'center';
+    ctx.fillText('DIVERSION • GO SLOW', 128, 72);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const barricadeMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+
+    // 2 Barricades offset slightly
+    const bGeo = new THREE.BoxGeometry(2.4, 0.95, 0.12);
+    const b1 = new THREE.Mesh(bGeo, barricadeMat);
+    b1.position.set(laneX, 0.65, 0);
+
+    const b2 = b1.clone();
+    b2.position.set(laneX + (Math.random() < 0.5 ? 0.3 : -0.3), 0.65, -1.8);
+    group.add(b1, b2);
+
+    // Flashing Amber Hazard Beacon Lights on top
+    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+    const beaconGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.18, 12);
+    const beacon1 = new THREE.Mesh(beaconGeo, beaconMat);
+    beacon1.position.set(laneX - 0.7, 1.25, 0);
+    const beacon2 = beacon1.clone();
+    beacon2.position.x = laneX + 0.7;
+    group.add(beacon1, beacon2);
+
+    // 2 Orange Safety Cones with silver reflective collars
+    const coneMat = new THREE.MeshLambertMaterial({ color: 0xf97316 });
+    const collarMat = new THREE.MeshBasicMaterial({ color: 0xf1f5f9 });
+    const coneGeo = new THREE.ConeGeometry(0.18, 0.65, 12);
+    const collarGeo = new THREE.CylinderGeometry(0.12, 0.15, 0.15, 12);
+
+    const c1 = new THREE.Group();
+    c1.add(new THREE.Mesh(coneGeo, coneMat));
+    const colMesh = new THREE.Mesh(collarGeo, collarMat);
+    colMesh.position.y = -0.05;
+    c1.add(colMesh);
+    c1.position.set(laneX - 1.1, 0.32, 1.2);
+
+    const c2 = c1.clone();
+    c2.position.set(laneX + 1.1, 0.32, 1.2);
+    group.add(c1, c2);
+
+    group.userData = {
+      isHazard: true,
+      hazardType: 'barricade',
+      width: 2.8,
+      length: 3.5,
+      laneX: laneX
+    };
+
+    return group;
+  }
+
+  // 14. SUGARCANE TRACTOR-TROLLEY (Slow Moving Highway Obstacle)
+  createTractorObstacle() {
+    const group = new THREE.Group();
+
+    const matTractor = new THREE.MeshLambertMaterial({ color: 0xdc2626 }); // Mahindra Red
+    const matChassis = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+    const matTire = new THREE.MeshLambertMaterial({ color: 0x111827 });
+    const matCane = new THREE.MeshLambertMaterial({ color: 0x84cc16 }); // Greenish-yellow sugarcane
+    const matWood = new THREE.MeshLambertMaterial({ color: 0x78350f });
+
+    // Tractor Engine Bonnet & Nose
+    const noseGeo = new THREE.BoxGeometry(1.2, 0.8, 1.8);
+    const nose = new THREE.Mesh(noseGeo, matTractor);
+    nose.position.set(0, 0.8, 1.2);
+    group.add(nose);
+
+    // Exhaust Chimney Pipe
+    const pipeGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0);
+    const pipe = new THREE.Mesh(pipeGeo, matChassis);
+    pipe.position.set(0.4, 1.6, 1.6);
+    group.add(pipe);
+
+    // Driver Seat & Steering
+    const seatGeo = new THREE.BoxGeometry(0.7, 0.6, 0.7);
+    const seat = new THREE.Mesh(seatGeo, matChassis);
+    seat.position.set(0, 0.9, 0.1);
+    group.add(seat);
+
+    // Tractor Wheels (Big rear agricultural tires, small front)
+    const bigTireGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.32, 16);
+    bigTireGeo.rotateZ(Math.PI / 2);
+    const smallTireGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.22, 16);
+    smallTireGeo.rotateZ(Math.PI / 2);
+
+    const rL = new THREE.Mesh(bigTireGeo, matTire);
+    rL.position.set(0.78, 0.55, 0.1);
+    const rR = rL.clone();
+    rR.position.x = -0.78;
+
+    const fL = new THREE.Mesh(smallTireGeo, matTire);
+    fL.position.set(0.68, 0.32, 1.8);
+    const fR = fL.clone();
+    fR.position.x = -0.68;
+    group.add(rL, rR, fL, fR);
+
+    // Attached Heavy Sugarcane Wooden Trolley
+    const trolleyGeo = new THREE.BoxGeometry(2.1, 1.1, 3.8);
+    const trolley = new THREE.Mesh(trolleyGeo, matWood);
+    trolley.position.set(0, 1.0, -2.4);
+    group.add(trolley);
+
+    // Trolley Wheels (4 rear axle tires)
+    const tTire1 = new THREE.Mesh(bigTireGeo, matTire);
+    tTire1.position.set(1.05, 0.55, -2.6);
+    const tTire2 = tTire1.clone();
+    tTire2.position.x = -1.05;
+    group.add(tTire1, tTire2);
+
+    // Heap of Sugarcane Stalks piled high
+    const caneGeo = new THREE.CylinderGeometry(0.045, 0.045, 4.4, 6);
+    caneGeo.rotateX(Math.PI / 2);
+    for (let c = 0; c < 24; c++) {
+      const cane = new THREE.Mesh(caneGeo, matCane);
+      cane.position.set(
+        (Math.random() - 0.5) * 1.8,
+        1.5 + Math.random() * 0.7,
+        -2.4 + (Math.random() - 0.5) * 0.6
+      );
+      cane.rotation.z = (Math.random() - 0.5) * 0.12;
+      group.add(cane);
+    }
+
+    // Red warning flag on the rear corner of the trolley
+    const flagGeo = new THREE.PlaneGeometry(0.35, 0.25);
+    const flagMat = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide });
+    const flag = new THREE.Mesh(flagGeo, flagMat);
+    flag.position.set(1.0, 1.7, -4.3);
+    group.add(flag);
+
+    // Rotate so tractor faces forward (-Z direction of travel)
+    const root = new THREE.Group();
+    group.rotation.y = Math.PI;
+    root.add(group);
+
+    root.userData = {
+      isTractor: true,
+      isHazard: true,
+      width: 2.2,
+      length: 6.5,
+      speedUnits: 7.2 // ~26 km/h slow lumbering speed
+    };
+
+    return root;
+  }
+
+  // 15. HIGHWAY SODIUM STREETLIGHTS (Day/Night Lamp Post)
+  createStreetLight(side = 1) {
+    const group = new THREE.Group();
+
+    const matPole = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.35, metalness: 0.8 });
+    const matLamp = new THREE.MeshBasicMaterial({ color: 0xfef08a }); // Sodium vapor golden glow
+
+    // Slender vertical pole
+    const poleGeo = new THREE.CylinderGeometry(0.09, 0.14, 8.2, 10);
+    const pole = new THREE.Mesh(poleGeo, matPole);
+    pole.position.y = 4.1;
+    group.add(pole);
+
+    // Cantilevered curved arm over the road
+    const armGeo = new THREE.CylinderGeometry(0.06, 0.08, 3.4, 8);
+    armGeo.rotateZ((Math.PI / 2) * -side);
+    const arm = new THREE.Mesh(armGeo, matPole);
+    arm.position.set(side * 1.5, 7.8, 0);
+    group.add(arm);
+
+    // Luminaire lamp head
+    const lampGeo = new THREE.BoxGeometry(0.35, 0.14, 0.75);
+    const lamp = new THREE.Mesh(lampGeo, matPole);
+    lamp.position.set(side * 2.8, 7.8, 0);
+    group.add(lamp);
+
+    // Glowing Sodium Lamp Lens
+    const lensGeo = new THREE.PlaneGeometry(0.28, 0.65);
+    lensGeo.rotateX(Math.PI / 2);
+    const lens = new THREE.Mesh(lensGeo, matLamp);
+    lens.position.set(side * 2.8, 7.72, 0);
+    group.add(lens);
+
+    return group;
+  }
+
+  // 16. OVERHEAD EXPRESSWAY DESTINATION SIGN GANTRY
+  createSignGantry() {
+    const group = new THREE.Group();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Indian Expressway Green Background
+    ctx.fillStyle = '#15803d';
+    ctx.fillRect(0, 0, 512, 128);
+
+    // Crisp white border
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(6, 6, 500, 116);
+
+    // Left Signboard Text
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('MUMBAI 120 KM  ★  PUNE 45 KM', 24, 48);
+
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillStyle = '#fef08a';
+    ctx.fillText('NH-44 SPEEDWAY (FOUR LANE)', 24, 82);
+
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('⚡ KHACHA COMPANY EXPRESSWAY ⚡', 24, 110);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const signMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+    const signGeo = new THREE.PlaneGeometry(16.0, 3.2);
+
+    // Overhead Sign
+    const signF = new THREE.Mesh(signGeo, signMat);
+    signF.position.set(0, 6.8, 0.1);
+    const signB = signF.clone();
+    signB.position.z = -0.1;
+    signB.rotation.y = Math.PI;
+    group.add(signF, signB);
+
+    // Steel Lattice Support Columns
+    const colMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3, metalness: 0.8 });
+    const colGeo = new THREE.CylinderGeometry(0.18, 0.22, 7.5, 12);
+    const colL = new THREE.Mesh(colGeo, colMat);
+    colL.position.set(-9.2, 3.75, 0);
+    const colR = colL.clone();
+    colR.position.x = 9.2;
+    group.add(colL, colR);
+
+    return group;
+  }
+
+  // 17. URBAN IT PARK TOWERS & ILLUMINATED CITY BUILDINGS
+  createUrbanBuilding(side = 1, height = 36) {
+    const group = new THREE.Group();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Dark sleek skyscraper glass
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 256, 512);
+
+    // Illuminated Office Window Matrix
+    for (let y = 16; y < 496; y += 28) {
+      for (let x = 16; x < 240; x += 24) {
+        if (Math.random() < 0.65) {
+          const colors = ['#38bdf8', '#fef08a', '#f43f5e', '#a78bfa', '#ffffff'];
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+          ctx.fillRect(x, y, 16, 18);
+        }
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const bMat = new THREE.MeshBasicMaterial({ map: tex });
+    const bGeo = new THREE.BoxGeometry(16, height, 16);
+    const bMesh = new THREE.Mesh(bGeo, bMat);
+    bMesh.position.y = height * 0.5;
+    group.add(bMesh);
+
+    // Roof rooftop beacon light
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+    beacon.position.set(0, height + 0.6, 0);
+    group.add(beacon);
+
+    return group;
+  }
+
+  // 18. CONCRETE HIGHWAY OVERPASS FLYOVER BRIDGE
+  createFlyover() {
+    const group = new THREE.Group();
+    const matConcrete = new THREE.MeshLambertMaterial({ color: 0x475569 });
+
+    // Main Bridge Deck (Spans across highway at 7.5m height)
+    const deckGeo = new THREE.BoxGeometry(26.0, 1.2, 8.0);
+    const deck = new THREE.Mesh(deckGeo, matConcrete);
+    deck.position.set(0, 7.8, 0);
+    group.add(deck);
+
+    // Guardrails on bridge sides
+    const railGeo = new THREE.BoxGeometry(26.0, 0.8, 0.2);
+    const rail1 = new THREE.Mesh(railGeo, this.matMetal);
+    rail1.position.set(0, 8.8, 3.8);
+    const rail2 = rail1.clone();
+    rail2.position.z = -3.8;
+    group.add(rail1, rail2);
+
+    // Support Piers outside shoulders
+    const pierGeo = new THREE.CylinderGeometry(0.6, 0.7, 7.2, 12);
+    const pier1 = new THREE.Mesh(pierGeo, matConcrete);
+    pier1.position.set(-10.5, 3.6, 0);
+    const pier2 = pier1.clone();
+    pier2.position.x = 10.5;
+    group.add(pier1, pier2);
+
+    return group;
+  }
 }
 
 window.sceneryBuilder = new SceneryBuilder();
+

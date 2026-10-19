@@ -646,13 +646,18 @@ class TrafficManager {
       }
     });
 
-    // Check Pickup Collections (Cutting Chai Boost)
+    // Check Pickup Collections (Meme Powerup Boost), Hazards & FASTag Toll Plazas
     let pickedUpChai = false;
+    let fastagPassed = false;
+
     if (this.road && this.road.chunks) {
       this.road.chunks.forEach(chunk => {
         if (chunk.userData && chunk.userData.scenery) {
           chunk.userData.scenery.forEach(item => {
-            if (item.userData && item.userData.isPickup && item.visible) {
+            if (!item.userData) return;
+
+            // 1. Meme Powerup Pickups
+            if (item.userData.isPickup && item.visible) {
               item.rotation.y += delta * 3.0; // Spin pickup
               const dx = Math.abs(playerX - item.position.x);
               const dz = Math.abs(playerZ - item.position.z);
@@ -665,6 +670,64 @@ class TrafficManager {
                 window.soundEngine.playChaiPickup();
               }
             }
+
+            // 2. Highway Construction Barricades & Diversions
+            if (item.userData.isHazard && item.userData.hazardType === 'barricade') {
+              const hX = item.position.x + (item.userData.laneX || 0);
+              const hZ = item.position.z;
+              const dx = Math.abs(playerX - hX);
+              const dz = Math.abs(playerZ - hZ);
+              if (this.invulnerableTimer <= 0 && dx < 1.6 && dz < 2.2 && !isAutopilot) {
+                collisionOccurred = true;
+              }
+            }
+
+            // 3. Sugarcane Tractor-Trolley Hazard (Slow moving or lumbering)
+            if (item.userData.isHazard && item.userData.isTractor) {
+              item.position.z -= (item.userData.speedUnits || 6.0) * delta;
+              const tX = item.position.x;
+              const tZ = item.position.z;
+              const dx = Math.abs(playerX - tX);
+              const dz = Math.abs(playerZ - tZ);
+              const minX = (playerWidth + (item.userData.width || 2.2)) * 0.5 * 0.85;
+              const minZ = (playerLength + (item.userData.length || 6.5)) * 0.5 * 0.85;
+              if (this.invulnerableTimer <= 0 && dx < minX && dz < minZ && !isAutopilot) {
+                collisionOccurred = true;
+              }
+            }
+
+            // 4. FASTag Toll Plaza Squeeze & Lane Clearance
+            if (item.userData.isTollPlaza) {
+              const dz = Math.abs(playerZ - item.position.z);
+              if (dz < 2.5) {
+                const pLat = this.playerLateralOffset;
+                // Check toll island concrete pillar collisions
+                const tollIslands = [-7.2, -3.6, 0.0, 3.6, 7.2];
+                const hitIsland = tollIslands.some(x => Math.abs(pLat - x) < 0.55);
+                if (hitIsland && this.invulnerableTimer <= 0 && !isAutopilot) {
+                  collisionOccurred = true;
+                }
+
+                // Check lane clearance
+                const openLanes = item.userData.openLanes || [-1.8, 1.8];
+                const inOpenLane = openLanes.some(l => Math.abs(pLat - l) < 1.35);
+
+                if (inOpenLane) {
+                  if (!item.userData.passed) {
+                    item.userData.passed = true;
+                    fastagPassed = true;
+                    this.score += 1500;
+                    window.soundEngine.playChaiPickup();
+                  }
+                } else if (!hitIsland) {
+                  // In closed lane with lowered boom barrier
+                  const inClosedLane = [-5.4, -1.8, 1.8, 5.4].some(l => Math.abs(pLat - l) < 1.35);
+                  if (inClosedLane && this.invulnerableTimer <= 0 && !isAutopilot) {
+                    collisionOccurred = true;
+                  }
+                }
+              }
+            }
           });
         }
       });
@@ -674,6 +737,7 @@ class TrafficManager {
       crashed: collisionOccurred,
       nearMiss: nearMissOccurred,
       chaiPickup: pickedUpChai,
+      fastagCleared: fastagPassed,
       chaiTimeBonus: this.chaiTimeBonus || 8,
       speedKmh: speedKmh,
       distanceKm: (this.distanceCovered / 1000).toFixed(1),

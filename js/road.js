@@ -11,16 +11,33 @@ class RoadManager {
     this.activeScenery = [];
     this.currentChunkIndex = 0;
 
-    // Materials
+    // Biome Materials
     this.matAsphalt = new THREE.MeshLambertMaterial({ color: 0x22262e });
-    this.matShoulder = new THREE.MeshLambertMaterial({ color: 0x926c45 }); // Dusty gravel shoulder
-    this.matTerrain = new THREE.MeshLambertMaterial({ color: 0x8a724d });  // Warm Indian earth / fields
+    this.matShoulderRural = new THREE.MeshLambertMaterial({ color: 0x926c45 }); // Dusty gravel shoulder
+    this.matShoulderExpress = new THREE.MeshLambertMaterial({ color: 0x475569 }); // Paved asphalt shoulder
+    this.matShoulderUrban = new THREE.MeshLambertMaterial({ color: 0x334155 }); // Concrete urban curb
+
+    this.matTerrainRural = new THREE.MeshLambertMaterial({ color: 0x8a724d });  // Warm Indian earth / fields
+    this.matTerrainExpress = new THREE.MeshLambertMaterial({ color: 0x2d4a22 }); // Lush green highway verges
+    this.matTerrainUrban = new THREE.MeshLambertMaterial({ color: 0x1e293b });  // Dark urban tarmac landscape
+
     this.matMedian = new THREE.MeshLambertMaterial({ color: 0x334155 });   // Concrete median divider
     this.matWhiteLine = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.matYellowLine = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
 
     // Procedural curve parameters (Smooth winding highway like Slow Roads)
     this.curveSeed = Math.random() * 1000;
+  }
+
+  // Get Biome based on distance along NH-44 (Z position)
+  // 0 - 1100m: Rural Foothills (Dhabas, Indie Dogs, Trees, Sugarcane Tractor)
+  // 1100m - 2400m: Expressway & Industrial Corridor (FASTag Toll Plaza, Gantries, Streetlights)
+  // 2400m+: Cyber-Desi Neon Urban Outskirts (IT Park Towers, Concrete Flyovers, Neon Billboards)
+  getBiome(z) {
+    const dist = Math.abs(z);
+    if (dist < 1100) return 'rural';
+    if (dist < 2400) return 'expressway';
+    return 'urban';
   }
 
   // Get road center X offset at distance Z
@@ -146,16 +163,28 @@ class RoadManager {
     roadMesh.receiveShadow = true;
     group.add(roadMesh);
 
+    // Select Biome Materials
+    const biome = this.getBiome(zPos);
+    let terrMat = this.matTerrainRural;
+    let shMat = this.matShoulderRural;
+    if (biome === 'expressway') {
+      terrMat = this.matTerrainExpress;
+      shMat = this.matShoulderExpress;
+    } else if (biome === 'urban') {
+      terrMat = this.matTerrainUrban;
+      shMat = this.matShoulderUrban;
+    }
+
     // Shoulder meshes
-    const shLMesh = this.buildRibbonMesh(shLVerts, segments, this.matShoulder);
-    const shRMesh = this.buildRibbonMesh(shRVerts, segments, this.matShoulder);
+    const shLMesh = this.buildRibbonMesh(shLVerts, segments, shMat);
+    const shRMesh = this.buildRibbonMesh(shRVerts, segments, shMat);
     group.add(shLMesh, shRMesh);
 
     // Terrain mesh
     terrainGeo.setAttribute('position', new THREE.Float32BufferAttribute(terrVerts, 3));
     terrainGeo.computeVertexNormals();
     terrainGeo.setIndex(terrIndices);
-    const terrMesh = new THREE.Mesh(terrainGeo, this.matTerrain);
+    const terrMesh = new THREE.Mesh(terrainGeo, terrMat);
     terrMesh.receiveShadow = true;
     group.add(terrMesh);
 
@@ -167,7 +196,8 @@ class RoadManager {
 
     group.userData = {
       zPos: zPos,
-      scenery: sceneryItems
+      scenery: sceneryItems,
+      biome: biome
     };
 
     this.scene.add(group);
@@ -230,16 +260,117 @@ class RoadManager {
     group.add(median);
   }
 
-  // Populate Indian scenery & fauna along this chunk
+  // Populate Indian scenery, hazards, and biome architecture along this chunk
   populateChunkScenery(group, zPos) {
     const items = [];
     const chunkMidZ = zPos - this.chunkLength * 0.5;
     const xCenter = this.getRoadCurve(chunkMidZ);
     const yCenter = this.getRoadElevation(chunkMidZ);
     const angle = this.getRoadAngle(chunkMidZ);
+    const biome = this.getBiome(chunkMidZ);
 
-    // 1. Roadside Dhaba (Spawns every ~180m on right shoulder)
-    if (Math.abs(zPos % 180) < this.chunkLength) {
+    // =========================================================================
+    // 1. FASTag ELECTRONIC TOLL PLAZA EVENT (Located in Expressway at ~1440m)
+    // 4 Lanes: 2 Green Open Lanes (grant +1500 PTS) vs 2 Closed Red Boom Barriers
+    // =========================================================================
+    if (Math.abs(zPos - (-1440)) < this.chunkLength * 0.5) {
+      const toll = window.sceneryBuilder.createTollPlaza({ openLanes: [-1.8, 1.8] });
+      toll.position.set(xCenter, yCenter, chunkMidZ);
+      toll.rotation.y = angle;
+      group.add(toll);
+      items.push(toll);
+    }
+
+    // =========================================================================
+    // 2. HIGHWAY CONSTRUCTION BARRICADES & DIVERSIONS (Every ~720m, not at toll)
+    // Red/white barricades, orange cones, and blinking amber beacons blocking 1 lane
+    // =========================================================================
+    if (Math.abs(zPos) > 400 && Math.abs(zPos % 720) < this.chunkLength && Math.abs(zPos - (-1440)) > 150) {
+      const candidateLanes = [-5.4, -1.8, 1.8, 5.4];
+      const laneX = candidateLanes[Math.floor(Math.random() * candidateLanes.length)];
+      const barricade = window.sceneryBuilder.createConstructionZone(laneX);
+      barricade.position.set(xCenter, yCenter, chunkMidZ);
+      barricade.rotation.y = angle;
+      group.add(barricade);
+      items.push(barricade);
+    }
+
+    // =========================================================================
+    // 3. OVERLOADED SUGARCANE TRACTOR-TROLLEY (Rural Foothills Biome Only)
+    // Slow lumbering agricultural hazard in the slow lanes
+    // =========================================================================
+    if (biome === 'rural' && Math.abs(zPos) > 220 && Math.abs(zPos % 360) < this.chunkLength) {
+      const tractor = window.sceneryBuilder.createTractorObstacle();
+      const slowLanes = [-5.4, 5.4];
+      const laneX = slowLanes[Math.floor(Math.random() * slowLanes.length)];
+      const tZ = chunkMidZ + (Math.random() * 12 - 6);
+      tractor.position.set(this.getRoadCurve(tZ) + laneX, this.getRoadElevation(tZ), tZ);
+      tractor.rotation.y = this.getRoadAngle(tZ);
+      group.add(tractor);
+      items.push(tractor);
+    }
+
+    // =========================================================================
+    // 4. HIGHWAY SODIUM STREETLIGHTS (Expressway & Urban Biomes)
+    // 8.2m steel poles with cantilevered arms & warm sodium glow on road shoulders
+    // =========================================================================
+    if (biome === 'expressway' || biome === 'urban') {
+      const lightL = window.sceneryBuilder.createStreetLight(-1);
+      lightL.position.set(xCenter - (this.roadWidth * 0.5 + 1.2), yCenter, chunkMidZ);
+      lightL.rotation.y = angle;
+      group.add(lightL);
+      items.push(lightL);
+
+      const lightR = window.sceneryBuilder.createStreetLight(1);
+      lightR.position.set(xCenter + (this.roadWidth * 0.5 + 1.2), yCenter, chunkMidZ);
+      lightR.rotation.y = angle;
+      group.add(lightR);
+      items.push(lightR);
+    }
+
+    // =========================================================================
+    // 5. OVERHEAD EXPRESSWAY DESTINATION SIGN GANTRY (Expressway Corridor)
+    // "MUMBAI 120 KM • PUNE 45 KM • NH-44 SPEEDWAY"
+    // =========================================================================
+    if (biome === 'expressway' && Math.abs(zPos % 420) < this.chunkLength && Math.abs(zPos - (-1440)) > 120) {
+      const gantry = window.sceneryBuilder.createSignGantry();
+      gantry.position.set(xCenter, yCenter, chunkMidZ);
+      gantry.rotation.y = angle;
+      group.add(gantry);
+      items.push(gantry);
+    }
+
+    // =========================================================================
+    // 6. URBAN IT PARK TOWERS & CONCRETE FLYOVERS (Urban Outskirts Biome)
+    // Illuminated glass windows, rooftop beacons, and bridge overpasses
+    // =========================================================================
+    if (biome === 'urban') {
+      [-1, 1].forEach(side => {
+        const height = 32 + Math.random() * 32;
+        const tower = window.sceneryBuilder.createUrbanBuilding(side, height);
+        const dist = this.roadWidth * 0.5 + 16.0 + Math.random() * 20.0;
+        const bZ = chunkMidZ + (Math.random() * 20 - 10);
+        tower.position.set(this.getRoadCurve(bZ) + side * dist, this.getRoadElevation(bZ), bZ);
+        tower.rotation.y = angle;
+        group.add(tower);
+        items.push(tower);
+      });
+
+      // Flyover bridge overpass every ~300m
+      if (Math.abs(zPos % 300) < this.chunkLength) {
+        const flyover = window.sceneryBuilder.createFlyover();
+        flyover.position.set(xCenter, yCenter, chunkMidZ);
+        flyover.rotation.y = angle;
+        group.add(flyover);
+        items.push(flyover);
+      }
+    }
+
+    // =========================================================================
+    // 7. ROADSIDE DHABA (Rural & Expressway)
+    // Authentic charpais, glowing string lights, tandoor hut
+    // =========================================================================
+    if ((biome === 'rural' || biome === 'expressway') && Math.abs(zPos % 180) < this.chunkLength) {
       const dhaba = window.sceneryBuilder.createDhaba();
       dhaba.position.set(xCenter + 16, yCenter, chunkMidZ);
       dhaba.rotation.y = angle - Math.PI / 2;
@@ -247,8 +378,11 @@ class RoadManager {
       items.push(dhaba);
     }
 
-    // 2. The Indie Dog (Lounging by roadside)
-    if (Math.random() < 0.6) {
+    // =========================================================================
+    // 8. THE INDIE DOG (Rural Biome Only - STRICTLY NO COWS)
+    // Lounging calmly by the highway shoulder
+    // =========================================================================
+    if (biome === 'rural' && Math.random() < 0.6) {
       const dogPose = Math.random() < 0.5 ? 'sitting' : 'sleeping';
       const dog = window.sceneryBuilder.createIndieDog(dogPose);
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -258,20 +392,25 @@ class RoadManager {
       items.push(dog);
     }
 
-    // 3. Floating Meme Powerup Pickup (Spaced every ~300m in one of the 4 lanes)
-    // Dynamic 3D model adapts to current vehicle: Sting for Swift, Vimal for Truck, Cutting Chai for Auto
-    if (Math.abs(zPos) > 100 && Math.abs(zPos % 300) < this.chunkLength) {
-      const vType = (window.app && window.app.selectedVehicle) || 'auto';
-      const chai = window.sceneryBuilder.createChaiPickup(vType);
+    // =========================================================================
+    // 9. MEME POWER-UP PICKUPS (Every ~300m)
+    // Adapts to selected vehicle: Sting Red for Swift, Vimal for Truck, Chai for Auto
+    // =========================================================================
+    if (Math.abs(zPos) > 100 && Math.abs(zPos % 300) < this.chunkLength && Math.abs(zPos - (-1440)) > 60) {
+      const vType = (window.game && window.game.selectedVehicle) || 'auto';
+      const pickup = window.sceneryBuilder.createChaiPickup(vType);
       const lanes = [-5.4, -1.8, 1.8, 5.4];
       const laneX = lanes[Math.floor(Math.random() * lanes.length)];
       const chaiZ = chunkMidZ + (Math.random() * 10 - 5);
-      chai.position.set(this.getRoadCurve(chaiZ) + laneX, this.getRoadElevation(chaiZ), chaiZ);
-      group.add(chai);
-      items.push(chai);
+      pickup.position.set(this.getRoadCurve(chaiZ) + laneX, this.getRoadElevation(chaiZ), chaiZ);
+      group.add(pickup);
+      items.push(pickup);
     }
 
-    // 4. Highway Billboard Hoarding (Every ~150m)
+    // =========================================================================
+    // 10. HIGHWAY BILLBOARDS (Every ~150m)
+    // Authentic Desi advertisements & Khacha Company branding
+    // =========================================================================
     if (Math.abs(zPos % 150) < this.chunkLength) {
       const billboard = window.sceneryBuilder.createHighwayBillboard(Math.floor(Math.abs(zPos / 150)));
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -281,8 +420,10 @@ class RoadManager {
       items.push(billboard);
     }
 
-    // 5. Tender Coconut Water Cart (Nariyal Pani) on Shoulder
-    if (Math.random() < 0.4) {
+    // =========================================================================
+    // 11. TENDER COCONUT WATER CART (Rural Biome)
+    // =========================================================================
+    if (biome === 'rural' && Math.random() < 0.4) {
       const cart = window.sceneryBuilder.createCoconutCart();
       const side = Math.random() < 0.5 ? -1 : 1;
       cart.position.set(xCenter + side * (this.roadWidth * 0.5 + 3.2), yCenter, chunkMidZ + (Math.random() * 16 - 8));
@@ -291,7 +432,9 @@ class RoadManager {
       items.push(cart);
     }
 
-    // 6. Milestone Stone ("NH 44")
+    // =========================================================================
+    // 12. MILESTONE STONE ("NH 44")
+    // =========================================================================
     if (Math.abs(zPos % 120) < this.chunkLength) {
       const milestone = window.sceneryBuilder.createMilestone();
       milestone.position.set(xCenter + (this.roadWidth * 0.5 + 1.2), yCenter, chunkMidZ);
@@ -300,8 +443,11 @@ class RoadManager {
       items.push(milestone);
     }
 
-    // 7. Banyan & Gulmohar Trees (Mix of green and bright flaming scarlet red)
-    const numTrees = Math.floor(Math.random() * 2) + 2;
+    // =========================================================================
+    // 13. BANYAN & GULMOHAR TREES
+    // Lush in rural/expressway; sparse in urban
+    // =========================================================================
+    const numTrees = biome === 'urban' ? (Math.random() < 0.4 ? 1 : 0) : (Math.floor(Math.random() * 2) + 2);
     for (let t = 0; t < numTrees; t++) {
       const isGulmohar = Math.random() < 0.45;
       const tree = isGulmohar ? window.sceneryBuilder.createGulmoharTree() : window.sceneryBuilder.createBanyanTree();
