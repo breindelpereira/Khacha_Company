@@ -5,7 +5,7 @@ class Game {
   constructor() {
     this.container = document.getElementById('game-container');
     this.state = 'ATTRACT'; // ATTRACT | PLAYING | CRASH | GAMEOVER
-    this.sessionTimer = 90; // 90-second event rush
+    this.sessionTimer = 40; // 40-second high-intensity sprint
     this.crashTimer = 0;
     this.autoResetTimer = 12;
     this.cameraMode = 0; // 0: Smooth Chase, 1: Close Hood, 2: Far Cinematic
@@ -514,7 +514,7 @@ class Game {
     window.soundEngine.startEngine();
 
     this.state = 'PLAYING';
-    this.sessionTimer = 90;
+    this.sessionTimer = 40;
     this.crashTimer = 0;
 
     // Reset road chunks cleanly to starting line (z = 0)
@@ -636,10 +636,10 @@ class Game {
     }, 2200);
   }
 
-  // Dynamic Day-to-Night Highway Atmosphere & Biome Transitions
-  // Phase 1 (0 - 900m): Golden Sunset over Rural Foothills
-  // Phase 2 (900m - 1800m): Violet Dusk & Twilight over Expressway Corridor
-  // Phase 3 (1800m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
+  // Dynamic Day-to-Night Highway Atmosphere & Biome Transitions (Fast 40s Sprint Progression)
+  // Phase 1 (0 - 380m): Golden Sunset over Rural Foothills
+  // Phase 2 (380m - 850m): Violet Dusk & Twilight over Expressway Corridor
+  // Phase 3 (850m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
   updateEnvironment(playerZ) {
     if (!this.traffic || !this.traffic.player) return;
     const playerPos = this.traffic.player.position;
@@ -654,8 +654,8 @@ class Game {
     let underglowIntensity = 0.4;
     let badgeText = '';
 
-    if (dist < 900) {
-      const t = dist / 900;
+    if (dist < 380) {
+      const t = dist / 380;
       skyCol.lerpColors(new THREE.Color(0xd99b66), new THREE.Color(0x9333ea), t * 0.7);
       sunCol.lerpColors(new THREE.Color(0xffbe76), new THREE.Color(0xf43f5e), t);
       sunIntensity = THREE.MathUtils.lerp(1.4, 0.85, t);
@@ -664,8 +664,8 @@ class Game {
       headIntensity = THREE.MathUtils.lerp(0.4, 1.4, t);
       underglowIntensity = THREE.MathUtils.lerp(0.2, 1.0, t);
       badgeText = '🌅 RURAL FOOTHILLS • GOLDEN SUNSET';
-    } else if (dist < 1800) {
-      const t = (dist - 900) / 900;
+    } else if (dist < 850) {
+      const t = (dist - 380) / 470;
       skyCol.lerpColors(new THREE.Color(0x6b21a8), new THREE.Color(0x1e1b4b), t);
       sunCol.lerpColors(new THREE.Color(0xf43f5e), new THREE.Color(0x38bdf8), t);
       sunIntensity = THREE.MathUtils.lerp(0.85, 0.35, t);
@@ -675,7 +675,7 @@ class Game {
       underglowIntensity = THREE.MathUtils.lerp(1.0, 2.0, t);
       badgeText = '🌆 EXPRESSWAY CORRIDOR • DUSK TWILIGHT';
     } else {
-      const t = Math.min((dist - 1800) / 600, 1.0);
+      const t = Math.min((dist - 850) / 350, 1.0);
       skyCol.lerpColors(new THREE.Color(0x1e1b4b), new THREE.Color(0x070b14), t);
       sunCol.setHex(0x38bdf8); // Moonlight
       sunIntensity = 0.32;
@@ -743,10 +743,10 @@ class Game {
     const strokeOffset = 188.5 - (speedRatio * 188.5);
     this.dom.speedoFill.style.strokeDashoffset = strokeOffset;
 
-    // Session Timer
+    // Session Timer (40s sprint)
     const secsLeft = Math.ceil(this.sessionTimer);
     this.dom.hudTimer.innerHTML = secsLeft + '<small>S</small>';
-    this.dom.hudTimerBar.style.width = (this.sessionTimer / 90 * 100) + '%';
+    this.dom.hudTimerBar.style.width = (this.sessionTimer / 40 * 100) + '%';
   }
 
   getCameraConfig(type = this.selectedVehicle) {

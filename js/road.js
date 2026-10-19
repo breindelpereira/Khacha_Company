@@ -29,14 +29,14 @@ class RoadManager {
     this.curveSeed = Math.random() * 1000;
   }
 
-  // Get Biome based on distance along NH-44 (Z position)
-  // 0 - 1100m: Rural Foothills (Dhabas, Indie Dogs, Trees, Sugarcane Tractor)
-  // 1100m - 2400m: Expressway & Industrial Corridor (FASTag Toll Plaza, Gantries, Streetlights)
-  // 2400m+: Cyber-Desi Neon Urban Outskirts (IT Park Towers, Concrete Flyovers, Neon Billboards)
+  // Get Biome based on distance along NH-44 (Z position) - Fast 40s Sprint Progression
+  // 0 - 450m: Rural Foothills (Dhabas, Indie Dogs, Trees, Sugarcane Tractor)
+  // 450m - 1050m: Expressway & Industrial Corridor (FASTag Toll Plaza, Gantries, Streetlights)
+  // 1050m+: Cyber-Desi Neon Urban Outskirts (IT Park Towers, Concrete Flyovers, Neon Billboards)
   getBiome(z) {
     const dist = Math.abs(z);
-    if (dist < 1100) return 'rural';
-    if (dist < 2400) return 'expressway';
+    if (dist < 450) return 'rural';
+    if (dist < 1050) return 'expressway';
     return 'urban';
   }
 
@@ -270,10 +270,10 @@ class RoadManager {
     const biome = this.getBiome(chunkMidZ);
 
     // =========================================================================
-    // 1. FASTag ELECTRONIC TOLL PLAZA EVENT (Located in Expressway at ~1440m)
+    // 1. FASTag ELECTRONIC TOLL PLAZA EVENT (Located in Expressway at ~720m)
     // 4 Lanes: 2 Green Open Lanes (grant +1500 PTS) vs 2 Closed Red Boom Barriers
     // =========================================================================
-    if (Math.abs(zPos - (-1440)) < this.chunkLength * 0.5) {
+    if (Math.abs(zPos - (-720)) < this.chunkLength * 0.5) {
       const toll = window.sceneryBuilder.createTollPlaza({ openLanes: [-1.8, 1.8] });
       toll.position.set(xCenter, yCenter, chunkMidZ);
       toll.rotation.y = angle;
@@ -282,10 +282,10 @@ class RoadManager {
     }
 
     // =========================================================================
-    // 2. HIGHWAY CONSTRUCTION BARRICADES & DIVERSIONS (Every ~720m, not at toll)
+    // 2. HIGHWAY CONSTRUCTION BARRICADES & DIVERSIONS (Every ~360m, not at toll)
     // Red/white barricades, orange cones, and blinking amber beacons blocking 1 lane
     // =========================================================================
-    if (Math.abs(zPos) > 400 && Math.abs(zPos % 720) < this.chunkLength && Math.abs(zPos - (-1440)) > 150) {
+    if (Math.abs(zPos) > 240 && Math.abs(zPos % 360) < this.chunkLength && Math.abs(zPos - (-720)) > 90) {
       const candidateLanes = [-5.4, -1.8, 1.8, 5.4];
       const laneX = candidateLanes[Math.floor(Math.random() * candidateLanes.length)];
       const barricade = window.sceneryBuilder.createConstructionZone(laneX);
@@ -299,7 +299,7 @@ class RoadManager {
     // 3. OVERLOADED SUGARCANE TRACTOR-TROLLEY (Rural Foothills Biome Only)
     // Slow lumbering agricultural hazard in the slow lanes
     // =========================================================================
-    if (biome === 'rural' && Math.abs(zPos) > 220 && Math.abs(zPos % 360) < this.chunkLength) {
+    if (biome === 'rural' && Math.abs(zPos) > 120 && Math.abs(zPos % 240) < this.chunkLength) {
       const tractor = window.sceneryBuilder.createTractorObstacle();
       const slowLanes = [-5.4, 5.4];
       const laneX = slowLanes[Math.floor(Math.random() * slowLanes.length)];
@@ -332,7 +332,7 @@ class RoadManager {
     // 5. OVERHEAD EXPRESSWAY DESTINATION SIGN GANTRY (Expressway Corridor)
     // "MUMBAI 120 KM • PUNE 45 KM • NH-44 SPEEDWAY"
     // =========================================================================
-    if (biome === 'expressway' && Math.abs(zPos % 420) < this.chunkLength && Math.abs(zPos - (-1440)) > 120) {
+    if (biome === 'expressway' && Math.abs(zPos % 300) < this.chunkLength && Math.abs(zPos - (-720)) > 90) {
       const gantry = window.sceneryBuilder.createSignGantry();
       gantry.position.set(xCenter, yCenter, chunkMidZ);
       gantry.rotation.y = angle;
@@ -393,10 +393,10 @@ class RoadManager {
     }
 
     // =========================================================================
-    // 9. MEME POWER-UP PICKUPS (Every ~300m)
+    // 9. MEME POWER-UP PICKUPS (Every ~240m)
     // Adapts to selected vehicle: Sting Red for Swift, Vimal for Truck, Chai for Auto
     // =========================================================================
-    if (Math.abs(zPos) > 100 && Math.abs(zPos % 300) < this.chunkLength && Math.abs(zPos - (-1440)) > 60) {
+    if (Math.abs(zPos) > 80 && Math.abs(zPos % 240) < this.chunkLength && Math.abs(zPos - (-720)) > 60) {
       const vType = (window.game && window.game.selectedVehicle) || 'auto';
       const pickup = window.sceneryBuilder.createChaiPickup(vType);
       const lanes = [-5.4, -1.8, 1.8, 5.4];
