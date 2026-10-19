@@ -636,10 +636,10 @@ class Game {
     }, 2200);
   }
 
-  // Dynamic Day-to-Night Highway Atmosphere & Biome Transitions (Fast 40s Sprint Progression)
-  // Phase 1 (0 - 380m): Golden Sunset over Rural Foothills
-  // Phase 2 (380m - 850m): Violet Dusk & Twilight over Expressway Corridor
-  // Phase 3 (850m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
+  // Dynamic Day-to-Night Highway Atmosphere & Biome Transitions (Ultra-Fast 40s Sprint Progression)
+  // Phase 1 (0 - 180m): Golden Sunset over Rural Foothills
+  // Phase 2 (180m - 480m): Violet Dusk & Twilight over Expressway Corridor
+  // Phase 3 (480m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
   updateEnvironment(playerZ) {
     if (!this.traffic || !this.traffic.player) return;
     const playerPos = this.traffic.player.position;
@@ -654,8 +654,8 @@ class Game {
     let underglowIntensity = 0.4;
     let badgeText = '';
 
-    if (dist < 380) {
-      const t = dist / 380;
+    if (dist < 180) {
+      const t = dist / 180;
       skyCol.lerpColors(new THREE.Color(0xd99b66), new THREE.Color(0x9333ea), t * 0.7);
       sunCol.lerpColors(new THREE.Color(0xffbe76), new THREE.Color(0xf43f5e), t);
       sunIntensity = THREE.MathUtils.lerp(1.4, 0.85, t);
@@ -664,8 +664,8 @@ class Game {
       headIntensity = THREE.MathUtils.lerp(0.4, 1.4, t);
       underglowIntensity = THREE.MathUtils.lerp(0.2, 1.0, t);
       badgeText = '🌅 RURAL FOOTHILLS • GOLDEN SUNSET';
-    } else if (dist < 850) {
-      const t = (dist - 380) / 470;
+    } else if (dist < 480) {
+      const t = (dist - 180) / 300;
       skyCol.lerpColors(new THREE.Color(0x6b21a8), new THREE.Color(0x1e1b4b), t);
       sunCol.lerpColors(new THREE.Color(0xf43f5e), new THREE.Color(0x38bdf8), t);
       sunIntensity = THREE.MathUtils.lerp(0.85, 0.35, t);
@@ -675,7 +675,7 @@ class Game {
       underglowIntensity = THREE.MathUtils.lerp(1.0, 2.0, t);
       badgeText = '🌆 EXPRESSWAY CORRIDOR • DUSK TWILIGHT';
     } else {
-      const t = Math.min((dist - 850) / 350, 1.0);
+      const t = Math.min((dist - 480) / 240, 1.0);
       skyCol.lerpColors(new THREE.Color(0x1e1b4b), new THREE.Color(0x070b14), t);
       sunCol.setHex(0x38bdf8); // Moonlight
       sunIntensity = 0.32;

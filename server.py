@@ -1,25 +1,19 @@
 import http.server
 import socketserver
-import webbrowser
-import os
 
 PORT = 8080
-DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=DIRECTORY, **kwargs)
+class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        super().end_headers()
 
-print(f"==================================================")
-print(f" 🛺 NH ODYSSEY | Desi Highway Racer Server")
-print(f" Serving locally at: http://localhost:{PORT}")
-print(f" Press Ctrl+C in terminal to stop.")
-print(f"==================================================")
-
-webbrowser.open(f"http://localhost:{PORT}")
-
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
-    try:
+socketserver.TCPServer.allow_reuse_address = True
+try:
+    with socketserver.TCPServer(("", PORT), NoCacheHTTPRequestHandler) as httpd:
+        print(f"Khacha Company HTTP Server active at http://localhost:{PORT}/ (no-cache enabled)")
         httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down server.")
+except Exception as e:
+    print(f"Server error: {e}")
