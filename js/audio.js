@@ -127,8 +127,9 @@ class SoundEngine {
   }
 
   startEngine() {
-    if (!this.ctx || this.isEngineRunning) return;
+    if (this.isEngineRunning) return;
     this.ensureContext();
+    if (!this.ctx) return;
 
     try {
       // Dual oscillator setup for deep throaty 2-stroke / 4-stroke thrum
