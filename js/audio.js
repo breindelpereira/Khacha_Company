@@ -19,7 +19,7 @@ class SoundEngine {
     this.lastRewardAt = -Infinity;
     this.rewardCooldown = 6;
     this.rewardEpoch = 0;
-    this.rewardGainByKind = { overtake: 1, points: 0.125 };
+    this.rewardGainByKind = { overtake: 1.6, points: 0.25 };
     this.rewardFiles = {
       overtake: 'assets/audio/charpata_gang_MEME_EXTRA_ECHO.wav',
       points: 'assets/audio/shamshanghat_MEME_EXTRA_ECHO.wav'
@@ -146,7 +146,7 @@ class SoundEngine {
       this.engineFilter.type = 'lowpass';
       this.engineFilter.frequency.setValueAtTime(180, this.ctx.currentTime);
 
-      this.engineGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+      this.engineGain.gain.setValueAtTime(0.16, this.ctx.currentTime);
 
       this.engineOsc1.connect(this.engineFilter);
       this.engineOsc2.connect(this.engineFilter);
@@ -179,7 +179,7 @@ class SoundEngine {
     this.engineOsc2.frequency.setTargetAtTime(baseFreq * 0.5, now, 0.06);
     this.engineFilter.frequency.setTargetAtTime(220 + (rpmBase * 380), now, 0.08);
     
-    const targetGain = 0.05 + Math.min(speedKmh / 100, 1) * 0.05 + (throttle ? 0.03 : 0);
+    const targetGain = 0.10 + Math.min(speedKmh / 100, 1) * 0.10 + (throttle ? 0.06 : 0);
     this.engineGain.gain.setTargetAtTime(targetGain, now, 0.08);
   }
 
@@ -197,7 +197,7 @@ class SoundEngine {
       osc.type = 'triangle'; // Crisp electric timbre
       osc.frequency.setValueAtTime(freq, now + idx * 0.05);
       gain.gain.setValueAtTime(0, now + idx * 0.05);
-      gain.gain.linearRampToValueAtTime(0.22, now + idx * 0.05 + 0.02);
+      gain.gain.linearRampToValueAtTime(0.32, now + idx * 0.05 + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.38);
 
       osc.connect(gain);
@@ -212,7 +212,7 @@ class SoundEngine {
     subOsc.type = 'sine';
     subOsc.frequency.setValueAtTime(140, now);
     subOsc.frequency.exponentialRampToValueAtTime(320, now + 0.25);
-    subGain.gain.setValueAtTime(0.25, now);
+    subGain.gain.setValueAtTime(0.35, now);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     subOsc.connect(subGain);
     subGain.connect(this.getOutput());
@@ -237,7 +237,7 @@ class SoundEngine {
 
     const now = this.ctx.currentTime;
     const masterGain = this.ctx.createGain();
-    masterGain.gain.setValueAtTime(0.2, now);
+    masterGain.gain.setValueAtTime(0.32, now);
     masterGain.connect(this.getOutput());
 
     // Multi-harmonic horn chords
@@ -265,7 +265,7 @@ class SoundEngine {
       filter.Q.setValueAtTime(3.0, now + note.start);
 
       noteGain.gain.setValueAtTime(0, now + note.start);
-      noteGain.gain.linearRampToValueAtTime(0.3, now + note.start + 0.02);
+      noteGain.gain.linearRampToValueAtTime(0.36, now + note.start + 0.02);
       noteGain.gain.exponentialRampToValueAtTime(0.001, now + note.start + note.dur);
 
       osc1.connect(filter);
@@ -308,7 +308,7 @@ class SoundEngine {
     filter.Q.setValueAtTime(4.0, now);
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.setValueAtTime(0.28, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
 
     noise.connect(filter);
@@ -330,7 +330,7 @@ class SoundEngine {
     osc.frequency.setValueAtTime(120, now);
     osc.frequency.exponentialRampToValueAtTime(35, now + 0.15);
 
-    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.setValueAtTime(0.38, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
     osc.connect(gain);
@@ -351,7 +351,7 @@ class SoundEngine {
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(160, now);
     osc.frequency.exponentialRampToValueAtTime(20, now + 0.4);
-    oscGain.gain.setValueAtTime(0.4, now);
+    oscGain.gain.setValueAtTime(0.55, now);
     oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
     osc.connect(oscGain);
     oscGain.connect(this.getOutput());
@@ -371,7 +371,7 @@ class SoundEngine {
     filter.type = 'highpass';
     filter.frequency.setValueAtTime(800, now);
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.setValueAtTime(0.42, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
 
     noise.connect(filter);
