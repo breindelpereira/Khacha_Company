@@ -14,6 +14,14 @@ test('meme reward uses one source, per-clip gain, and cooldown', async () => {
   assert.equal(engine.rewardGainByKind.points, 0.25);
 });
 
+test('startEngine creates an audio context before checking engine state', () => {
+  const { engine } = audio();
+  engine.ctx = null;
+  engine.startEngine();
+  assert.ok(engine.ctx);
+  assert.equal(engine.isEngineRunning, true);
+});
+
 test('procedural effects use boosted gain levels', () => {
   const { engine, nodes } = audio();
   engine.startEngine();
