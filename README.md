@@ -22,6 +22,8 @@ npx serve .
 ### Option 3: Direct File Open
 You can also directly double-click `index.html` in Chrome or Edge.
 
+> For full meme voice playback, use Option 1 or Option 2. The two WAV files are fetched from `assets/audio/`, so an HTTP server is the supported launch method. Three.js still loads from its CDN.
+
 ---
 
 ## 🎮 Controls
@@ -36,6 +38,13 @@ You can also directly double-click `index.html` in Chrome or Edge.
 | **Pause Game** | `P` or `Esc` | Menu / Start Button |
 | **Change Camera View** | `C` (Chase, Hood, High-Angle) | - |
 | **Quick Restart** | `R` | - |
+
+## 🔊 Meme Voice Rewards
+
+- **Completed clean overtake:** `charpata_gang_MEME_EXTRA_ECHO.wav`
+- **Pickup, FASTag clearance, or each new 5,000-point milestone:** `shamshanghat_MEME_EXTRA_ECHO.wav`
+- Voice rewards play one at a time with a short cooldown. They never play for ordinary distance-score ticks, crashes, attract mode, or stale events after pause/restart.
+- Use the HUD **Sound** and **Memes** controls to mute all game audio or only the voice clips.
 
 ---
 

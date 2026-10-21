@@ -549,8 +549,8 @@ body, html {
 
 /* Audio Banner */
 .audio-banner {
-  position: absolute;
-  bottom: 16px;
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.85);
@@ -1042,4 +1042,56 @@ body, html {
   background: rgba(239, 68, 68, 0.4);
   color: #ffffff;
   transform: translateY(-2px);
+}
+
+/* Cohesive minimal-meme polish: let road and vehicles carry the spectacle. */
+:root {
+  --ink: #111722;
+  --panel: rgba(17, 23, 34, 0.82);
+  --line: rgba(255, 255, 255, 0.16);
+  --paper: #f8fafc;
+  --amber: #f7b733;
+}
+
+.hud-layer { padding: max(16px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
+.hud-card, .vehicle-toast { background: var(--panel); border-color: var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
+.hud-card .value, #hud-score, .speedo-num { font-variant-numeric: tabular-nums; }
+.audio-controls { display: flex; gap: 6px; pointer-events: all; align-self: center; }
+.audio-toggle { border: 1px solid var(--line); background: rgba(17,23,34,.78); color: var(--paper); border-radius: 999px; padding: 7px 10px; font: 700 10px/1 Outfit, sans-serif; letter-spacing: .04em; cursor: pointer; }
+.audio-toggle[aria-pressed="true"] { color: #fecaca; border-color: rgba(248,113,113,.58); background: rgba(127,29,29,.52); }
+.audio-toggle:focus-visible, .v-btn:focus-visible, .pulse-button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+.overlay-screen { overflow-y: auto; overscroll-behavior: contain; padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom)); }
+.attract-content { width: min(720px, 100%); margin: auto; }
+.game-title { text-wrap: balance; }
+.feat-tag { background: rgba(17,23,34,.58); border-color: rgba(255,255,255,.18); box-shadow: none; }
+.v-btn.active { box-shadow: 0 8px 20px rgba(245,158,11,.32); }
+
+@media (max-width: 600px), (max-height: 720px) {
+  .overlay-screen { justify-content: flex-start; align-items: stretch; }
+  .cinema-letterbox { display: none; }
+  .attract-content { transform: none; padding: 12px 0 26px; }
+  .title-badge { font-size: 10px; }
+  .game-title { font-size: clamp(42px, 14vw, 72px); line-height: .9; margin: 8px 0; }
+  .game-subtitle { font-size: 10px; letter-spacing: .18em; line-height: 1.45; }
+  .attract-features { gap: 7px; margin: 18px auto; }
+  .feat-tag { font-size: 12px; padding: 9px 12px; }
+  .vehicle-picker-box { padding: 14px; margin-top: 14px; }
+  .v-btn { min-height: 58px; padding: 9px 12px; }
+  .v-btn.active { transform: none; }
+  .press-to-drive { margin-top: 14px; }
+  .pulse-button { font-size: 13px; padding: 13px 16px; }
+  .top-bar { gap: 7px; align-items: stretch; }
+  .hud-card { padding: 8px 10px; border-radius: 10px; }
+  .hud-card .label { font-size: 8px; }
+  .hud-card .value { font-size: 18px; }
+  .pause-btn-card { padding: 7px 9px; }
+  .audio-controls { position: absolute; top: 70px; right: 18px; }
+  .bottom-bar { gap: 8px; }
+  .control-hints { display: none; }
+  .vehicle-toast, .flow-toast, .fastag-toast, .chai-toast { max-width: calc(100vw - 32px); }
+  .audio-banner { max-width: calc(100vw - 32px); text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

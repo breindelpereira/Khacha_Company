@@ -10,6 +10,7 @@ class Game {
     this.autoResetTimer = 12;
     this.cameraMode = 0; // 0: Smooth Chase, 1: Close Hood, 2: Far Cinematic
     this.highScore = parseInt(localStorage.getItem('khacha_best') || localStorage.getItem('nh_odyssey_best') || '0', 10);
+    this.lastRewardMilestone = 0;
 
     // Input State
     this.input = {
@@ -57,7 +58,9 @@ class Game {
       resumeBtn: document.getElementById('resume-btn'),
       restartPauseBtn: document.getElementById('restart-pause-btn'),
       hudBiomeBadge: document.getElementById('hud-biome-badge'),
-      fastagToast: document.getElementById('fastag-toast')
+      fastagToast: document.getElementById('fastag-toast'),
+      soundToggle: document.getElementById('sound-toggle'),
+      memeToggle: document.getElementById('meme-toggle')
     };
 
     this.selectedVehicle = 'auto';
@@ -259,6 +262,27 @@ class Game {
       });
     }
 
+    if (this.dom.soundToggle) {
+      this.dom.soundToggle.addEventListener('click', () => {
+        const muted = this.dom.soundToggle.getAttribute('aria-pressed') !== 'true';
+        window.soundEngine.setMuted(muted);
+        this.dom.soundToggle.setAttribute('aria-pressed', String(muted));
+        this.dom.soundToggle.textContent = muted ? 'Sound off' : 'Sound on';
+      });
+    }
+    if (this.dom.memeToggle) {
+      this.dom.memeToggle.addEventListener('click', () => {
+        const muted = this.dom.memeToggle.getAttribute('aria-pressed') !== 'true';
+        window.soundEngine.setMemeMuted(muted);
+        this.dom.memeToggle.setAttribute('aria-pressed', String(muted));
+        this.dom.memeToggle.textContent = muted ? 'Memes off' : 'Memes on';
+      });
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) window.soundEngine.stopReward();
+    });
+
     // Audio Unmute click
     window.addEventListener('pointerdown', () => {
       window.soundEngine.ensureContext();
@@ -279,6 +303,7 @@ class Game {
     if (this.state !== 'PLAYING') return;
     this.state = 'PAUSED';
     window.soundEngine.stopEngine();
+    window.soundEngine.stopReward();
     this.dom.pauseOverlay.classList.remove('hidden');
     // Sync buttons on pause screen
     const vButtons = document.querySelectorAll('.v-btn');
@@ -509,13 +534,27 @@ class Game {
     setTimeout(() => this.dom.hornBtn.classList.remove('active'), 250);
   }
 
+  playRewardFeedback(stats) {
+    if (this.state !== 'PLAYING' || stats.crashed) return;
+    const milestone = Math.floor(stats.score / 5000) * 5000;
+    const majorReward = stats.chaiPickup || stats.fastagCleared || milestone > this.lastRewardMilestone;
+    if (milestone > this.lastRewardMilestone) this.lastRewardMilestone = milestone;
+    if (majorReward) {
+      window.soundEngine.playReward('points');
+    } else if (stats.overtake) {
+      window.soundEngine.playReward('overtake');
+    }
+  }
+
   startGame() {
     window.soundEngine.ensureContext();
+    window.soundEngine.resetRewards();
     window.soundEngine.startEngine();
 
     this.state = 'PLAYING';
     this.sessionTimer = 40;
     this.crashTimer = 0;
+    this.lastRewardMilestone = 0;
 
     // Reset road chunks cleanly to starting line (z = 0)
     this.road.reset(0);
@@ -550,12 +589,14 @@ class Game {
     this.crashTimer = 1.8;
     window.soundEngine.playCrash();
     window.soundEngine.stopEngine();
+    window.soundEngine.stopReward();
   }
 
   endSession() {
     this.state = 'GAMEOVER';
     this.autoResetTimer = 12;
     window.soundEngine.stopEngine();
+    window.soundEngine.stopReward();
 
     // Check High Score
     const finalScore = this.traffic.score;
@@ -900,6 +941,7 @@ class Game {
       const stats = this.traffic.update(delta, this.input, false);
       this.road.update(this.traffic.player.position.z);
       this.updateHUD(stats);
+      this.playRewardFeedback(stats);
 
       if (stats.chaiPickup) {
         const bonus = stats.chaiTimeBonus || (this.selectedVehicle === 'truck' ? 10 : (this.selectedVehicle === 'auto' ? 8 : 5));

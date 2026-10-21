@@ -4,7 +4,8 @@
   "description": "An atmospheric, high-energy Indian Highway Arcade Racer built with Three.js",
   "scripts": {
     "start": "python server.py",
-    "serve": "npx serve ."
+    "serve": "npx serve .",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": ["threejs", "game", "highway-racer", "traffic-racer", "khacha-company"],
   "author": "",
