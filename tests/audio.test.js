@@ -10,8 +10,19 @@ test('meme reward uses one source, per-clip gain, and cooldown', async () => {
   assert.equal(second, false);
   const sources = nodes.filter(node => node.started && node.buffer);
   assert.equal(sources.length, 1);
-  assert.equal(engine.rewardGainByKind.overtake, 1);
-  assert.equal(engine.rewardGainByKind.points, 0.125);
+  assert.equal(engine.rewardGainByKind.overtake, 1.6);
+  assert.equal(engine.rewardGainByKind.points, 0.25);
+});
+
+test('procedural effects use boosted gain levels', () => {
+  const { engine, nodes } = audio();
+  engine.startEngine();
+  assert.equal(engine.engineGain.gain.value, 0.16);
+
+  engine.playHorn();
+  engine.playNearMiss();
+  assert.ok(nodes.some(node => node.gain.value === 0.32));
+  assert.ok(nodes.some(node => node.gain.value === 0.28));
 });
 
 test('meme reward respects mute and reset stops active source', async () => {
