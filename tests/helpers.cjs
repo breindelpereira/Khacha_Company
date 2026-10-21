@@ -19,7 +19,7 @@ function audio(fetchImpl = async () => ({ ok: true, arrayBuffer: async () => new
     decodeAudioData() { return Promise.resolve({ duration: 2 }); }
     node() { const n = { gain: param(), frequency: param(), Q: param(), connect(to) { this.output = to; }, disconnect() {}, start() { this.started = true; }, stop() { this.stopped = true; } }; nodes.push(n); return n; }
   }
-  const c = load('js/audio.js', 'SoundEngine', { window: { AudioContext: Context }, fetch: fetchImpl });
+  const c = load('js/audio.js', 'SoundEngine', { THREE: { MathUtils: { clamp: (v, min, max) => Math.max(min, Math.min(max, v)) } }, window: { AudioContext: Context }, fetch: fetchImpl });
   const engine = new c.Subject();
   engine.ensureContext();
   return { engine, nodes };

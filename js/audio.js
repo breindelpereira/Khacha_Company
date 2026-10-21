@@ -39,7 +39,10 @@ class SoundEngine {
   ensureContext() {
     this.init();
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      return this.ctx.resume().catch(error => {
+        console.warn('Audio activation blocked', error);
+        return false;
+      });
     }
   }
 
@@ -86,6 +89,27 @@ class SoundEngine {
       })
       .finally(() => { delete this.rewardLoads[kind]; });
     return this.rewardLoads[kind];
+  }
+
+  async previewReward(kind) {
+    // This explicit sound-check action enables both audio controls.
+    this.setMuted(false);
+    this.setMemeMuted(false);
+    this.resetRewards();
+    if (!this.ctx) return false;
+    if (this.ctx.state !== 'running') {
+      let timeout;
+      try {
+        await Promise.race([
+          this.ensureContext(),
+          new Promise(resolve => { timeout = setTimeout(resolve, 2000); })
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    if (this.ctx.state !== 'running') return false;
+    return this.playReward(kind);
   }
 
   async playReward(kind) {
@@ -147,7 +171,7 @@ class SoundEngine {
       this.engineFilter.type = 'lowpass';
       this.engineFilter.frequency.setValueAtTime(180, this.ctx.currentTime);
 
-      this.engineGain.gain.setValueAtTime(0.16, this.ctx.currentTime);
+      this.engineGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
 
       this.engineOsc1.connect(this.engineFilter);
       this.engineOsc2.connect(this.engineFilter);
@@ -180,7 +204,8 @@ class SoundEngine {
     this.engineOsc2.frequency.setTargetAtTime(baseFreq * 0.5, now, 0.06);
     this.engineFilter.frequency.setTargetAtTime(220 + (rpmBase * 380), now, 0.08);
     
-    const targetGain = 0.10 + Math.min(speedKmh / 100, 1) * 0.10 + (throttle ? 0.06 : 0);
+    const targetGain = (0.05 + Math.min(speedKmh / 100, 1) * 0.05 + (throttle ? 0.03 : 0))
+      * (this.rewardSource ? 0.25 : 1);
     this.engineGain.gain.setTargetAtTime(targetGain, now, 0.08);
   }
 

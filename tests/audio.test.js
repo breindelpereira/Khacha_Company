@@ -2,6 +2,43 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { audio } = require('./helpers.cjs');
 
+test('meme preview enables both mute controls and bypasses old reward cooldown', async () => {
+  const { engine } = audio();
+  engine.setMuted(true);
+  engine.setMemeMuted(true);
+  engine.lastRewardAt = engine.ctx.currentTime;
+  assert.equal(await engine.previewReward('overtake'), true);
+  assert.equal(engine.isMuted, false);
+  assert.equal(engine.isMemeMuted, false);
+  assert.equal(engine.masterGain.gain.value, 1);
+  const previous = engine.rewardSource;
+  assert.equal(await engine.previewReward('points'), true);
+  assert.equal(previous.stopped, true);
+});
+
+test('engine ducks while a meme is playing and recovers afterward', async () => {
+  const { engine } = audio();
+  engine.startEngine();
+  engine.updateEngine(80, true, 3);
+  const normal = engine.engineGain.gain.value;
+  await engine.playReward('overtake');
+  engine.updateEngine(80, true, 3);
+  assert.equal(engine.engineGain.gain.value, normal * 0.25);
+  engine.stopReward();
+  engine.updateEngine(80, true, 3);
+  assert.equal(engine.engineGain.gain.value, normal);
+});
+
+test('blocked audio activation returns failure and remains retryable', async () => {
+  const { engine } = audio();
+  engine.ctx.state = 'suspended';
+  engine.ctx.resume = () => Promise.reject(new Error('NotAllowedError'));
+  assert.equal(await engine.previewReward('points'), false);
+  assert.equal(engine.rewardSource, null);
+  engine.ctx.resume = () => { engine.ctx.state = 'running'; return Promise.resolve(); };
+  assert.equal(await engine.previewReward('points'), true);
+});
+
 test('meme reward uses one source, per-clip gain, and cooldown', async () => {
   const { engine, nodes } = audio();
   const first = await engine.playReward('overtake');
@@ -25,7 +62,7 @@ test('startEngine creates an audio context before checking engine state', () => 
 test('procedural effects use boosted gain levels', () => {
   const { engine, nodes } = audio();
   engine.startEngine();
-  assert.equal(engine.engineGain.gain.value, 0.16);
+  assert.equal(engine.engineGain.gain.value, 0.08);
 
   engine.playHorn();
   engine.playNearMiss();

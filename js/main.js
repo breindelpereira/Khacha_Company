@@ -279,17 +279,57 @@ class Game {
       });
     }
 
+    const testMemes = document.getElementById('test-memes');
+    const testStatus = document.getElementById('audio-test-status');
+    let previewKind = 'overtake';
+    testMemes.addEventListener('click', async () => {
+      testMemes.disabled = true;
+      testStatus.textContent = 'Loading meme audio…';
+      try {
+        const pending = window.soundEngine.previewReward(previewKind);
+        this.dom.soundToggle.setAttribute('aria-pressed', 'false');
+        this.dom.soundToggle.textContent = 'Sound on';
+        this.dom.memeToggle.setAttribute('aria-pressed', 'false');
+        this.dom.memeToggle.textContent = 'Memes on';
+        const played = await pending;
+        testStatus.textContent = played
+          ? `Playing ${previewKind === 'overtake' ? 'Charpata Gang' : 'Shamshanghat'}. Click again to test the other clip.`
+          : 'Audio could not start. Check browser sound permissions and try again.';
+        if (played) {
+          previewKind = previewKind === 'overtake' ? 'points' : 'overtake';
+          this.dom.audioPrompt?.classList.add('hidden');
+        }
+      } catch (error) {
+        console.warn('Meme sound check failed', error);
+        testStatus.textContent = 'Audio could not start. Check browser sound permissions and try again.';
+      } finally {
+        testMemes.disabled = false;
+      }
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) window.soundEngine.stopReward();
     });
 
-    // Audio Unmute click
-    window.addEventListener('pointerdown', () => {
-      window.soundEngine.ensureContext();
-      if (this.dom.audioPrompt) {
-        this.dom.audioPrompt.classList.add('hidden');
-      }
-    }, { once: true });
+    // Keep retrying on user gestures if the browser initially blocks audio.
+    const activateAudio = () => {
+      const sound = window.soundEngine;
+      sound.ensureContext();
+      if (!sound.ctx) return;
+      const updatePrompt = () => {
+        const ready = sound.ctx.state === 'running';
+        this.dom.audioPrompt?.classList.toggle('hidden', ready);
+        if (ready) {
+          sound.loadReward('overtake');
+          sound.loadReward('points');
+        }
+      };
+      sound.ctx.onstatechange = updatePrompt;
+      updatePrompt();
+    };
+    window.addEventListener('pointerdown', activateAudio, { capture: true });
+    window.addEventListener('click', activateAudio, { capture: true });
+    window.addEventListener('keydown', activateAudio, { capture: true });
 
     // Window Resize
     window.addEventListener('resize', () => {
