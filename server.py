@@ -1,7 +1,17 @@
 import http.server
 import socketserver
+import threading
+import webbrowser
 
 PORT = 8080
+URL = f"http://localhost:{PORT}/"
+
+
+def open_browser() -> None:
+    try:
+        webbrowser.open(URL)
+    except Exception as exc:
+        print(f"Could not open a browser automatically: {exc}")
 
 class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -13,7 +23,8 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 try:
     with socketserver.TCPServer(("", PORT), NoCacheHTTPRequestHandler) as httpd:
-        print(f"Khacha Company HTTP Server active at http://localhost:{PORT}/ (no-cache enabled)")
+        print(f"Khacha Company HTTP Server active at {URL} (no-cache enabled)")
+        threading.Thread(target=open_browser, daemon=True).start()
         httpd.serve_forever()
 except Exception as e:
     print(f"Server error: {e}")

@@ -11,6 +11,19 @@ class SoundEngine {
     this.engineFilter = null;
     this.isEngineRunning = false;
     this.isHornPlaying = false;
+    this.masterGain = null;
+    this.isMemeMuted = false;
+    this.rewardSource = null;
+    this.rewardBuffers = {};
+    this.rewardLoads = {};
+    this.lastRewardAt = -Infinity;
+    this.rewardCooldown = 6;
+    this.rewardEpoch = 0;
+    this.rewardGainByKind = { overtake: 1, points: 0.125 };
+    this.rewardFiles = {
+      overtake: 'assets/audio/charpata_gang_MEME_EXTRA_ECHO.wav',
+      points: 'assets/audio/shamshanghat_MEME_EXTRA_ECHO.wav'
+    };
   }
 
   init() {
@@ -28,6 +41,89 @@ class SoundEngine {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+  }
+
+  getOutput() {
+    if (!this.ctx) return null;
+    if (!this.masterGain) {
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 1, this.ctx.currentTime);
+      this.masterGain.connect(this.ctx.destination);
+    }
+    return this.masterGain;
+  }
+
+  setMuted(muted) {
+    this.isMuted = Boolean(muted);
+    this.ensureContext();
+    if (this.masterGain) this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 1, this.ctx.currentTime, 0.02);
+    if (this.isMuted) this.stopReward();
+  }
+
+  setMemeMuted(muted) {
+    this.isMemeMuted = Boolean(muted);
+    if (this.isMemeMuted) this.stopReward();
+  }
+
+  async loadReward(kind) {
+    if (this.rewardBuffers[kind]) return this.rewardBuffers[kind];
+    if (this.rewardLoads[kind]) return this.rewardLoads[kind];
+    const path = this.rewardFiles[kind];
+    if (!path || typeof fetch !== 'function') return null;
+    this.rewardLoads[kind] = fetch(path)
+      .then(response => {
+        if (!response.ok) throw new Error(`Could not load ${path}`);
+        return response.arrayBuffer();
+      })
+      .then(data => this.ctx.decodeAudioData(data))
+      .then(buffer => {
+        this.rewardBuffers[kind] = buffer;
+        return buffer;
+      })
+      .catch(error => {
+        console.warn('Meme reward audio unavailable', error);
+        return null;
+      })
+      .finally(() => { delete this.rewardLoads[kind]; });
+    return this.rewardLoads[kind];
+  }
+
+  async playReward(kind) {
+    this.ensureContext();
+    if (!this.ctx || this.isMuted || this.isMemeMuted || this.rewardSource) return false;
+    const now = this.ctx.currentTime;
+    if (now - this.lastRewardAt < this.rewardCooldown) return false;
+    const epoch = this.rewardEpoch;
+    const buffer = await this.loadReward(kind);
+    if (!buffer || epoch !== this.rewardEpoch || this.isMuted || this.isMemeMuted || this.rewardSource) {
+      if (!buffer) this.playChaiPickup();
+      return false;
+    }
+    const source = this.ctx.createBufferSource();
+    const gain = this.ctx.createGain();
+    source.buffer = buffer;
+    gain.gain.setValueAtTime(this.rewardGainByKind[kind] || 0.2, this.ctx.currentTime);
+    source.connect(gain);
+    gain.connect(this.getOutput());
+    source.onended = () => {
+      if (this.rewardSource === source) this.rewardSource = null;
+    };
+    this.rewardSource = source;
+    this.lastRewardAt = this.ctx.currentTime;
+    source.start(this.ctx.currentTime);
+    return true;
+  }
+
+  stopReward() {
+    if (!this.rewardSource) return;
+    try { this.rewardSource.stop(); } catch (e) {}
+    this.rewardSource = null;
+  }
+
+  resetRewards() {
+    this.stopReward();
+    this.lastRewardAt = -Infinity;
+    this.rewardEpoch++;
   }
 
   startEngine() {
@@ -55,7 +151,7 @@ class SoundEngine {
       this.engineOsc1.connect(this.engineFilter);
       this.engineOsc2.connect(this.engineFilter);
       this.engineFilter.connect(this.engineGain);
-      this.engineGain.connect(this.ctx.destination);
+      this.engineGain.connect(this.getOutput());
 
       this.engineOsc1.start();
       this.engineOsc2.start();
@@ -105,7 +201,7 @@ class SoundEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.38);
 
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.getOutput());
       osc.start(now + idx * 0.05);
       osc.stop(now + idx * 0.05 + 0.42);
     });
@@ -119,7 +215,7 @@ class SoundEngine {
     subGain.gain.setValueAtTime(0.25, now);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     subOsc.connect(subGain);
-    subGain.connect(this.ctx.destination);
+    subGain.connect(this.getOutput());
     subOsc.start(now);
     subOsc.stop(now + 0.32);
   }
@@ -142,7 +238,7 @@ class SoundEngine {
     const now = this.ctx.currentTime;
     const masterGain = this.ctx.createGain();
     masterGain.gain.setValueAtTime(0.2, now);
-    masterGain.connect(this.ctx.destination);
+    masterGain.connect(this.getOutput());
 
     // Multi-harmonic horn chords
     const notes = [
@@ -217,7 +313,7 @@ class SoundEngine {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.getOutput());
 
     noise.start(now);
   }
@@ -238,7 +334,7 @@ class SoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.getOutput());
     osc.start(now);
     osc.stop(now + 0.16);
   }
@@ -258,7 +354,7 @@ class SoundEngine {
     oscGain.gain.setValueAtTime(0.4, now);
     oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
     osc.connect(oscGain);
-    oscGain.connect(this.ctx.destination);
+    oscGain.connect(this.getOutput());
     osc.start(now);
     osc.stop(now + 0.4);
 
@@ -280,7 +376,7 @@ class SoundEngine {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.getOutput());
     noise.start(now);
   }
 }

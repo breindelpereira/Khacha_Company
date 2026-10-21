@@ -281,7 +281,8 @@ class TrafficManager {
       isYielding: false,
       width: width,
       length: length,
-      nearMissed: false
+      nearMissed: false,
+      passArmed: false
     });
   }
 
@@ -449,6 +450,7 @@ class TrafficManager {
     // 2. Update AI Traffic
     let collisionOccurred = false;
     let nearMissOccurred = false;
+    let overtakeOccurred = false;
     const playerZ = this.player.position.z;
     const playerX = this.player.position.x;
     let playerWidth = 1.6;
@@ -752,6 +754,17 @@ class TrafficManager {
         window.soundEngine.playNearMiss();
       }
 
+      // A pass is a completed ahead-to-behind crossing with body clearance.
+      // It is feedback only, never an additional scoring source.
+      const clearAhead = playerLength + v.length;
+      const clearBehind = (playerLength + v.length) * 0.5;
+      if (!isAutopilot && distAheadOfPlayer > clearAhead) {
+        v.passArmed = true;
+      } else if (!isAutopilot && v.passArmed && distAheadOfPlayer < -clearBehind && dx > minDistanceX) {
+        v.passArmed = false;
+        overtakeOccurred = true;
+      }
+
       // 13. Recycle AI vehicle if it falls far behind player (>80m behind)
       if (v.mesh.position.z > playerZ + 80) {
         // Spawn far ahead (180m to 260m ahead of player)
@@ -766,6 +779,7 @@ class TrafficManager {
         v.brakeTimer = 0;
         v.isYielding = false;
         v.nearMissed = false;
+        v.passArmed = false;
       }
     });
 
@@ -861,6 +875,7 @@ class TrafficManager {
       nearMiss: nearMissOccurred,
       chaiPickup: pickedUpChai,
       fastagCleared: fastagPassed,
+      overtake: overtakeOccurred,
       chaiTimeBonus: this.chaiTimeBonus || 8,
       speedKmh: speedKmh,
       distanceKm: (this.distanceCovered / 1000).toFixed(1),
