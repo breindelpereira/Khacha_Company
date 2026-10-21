@@ -7,22 +7,30 @@ Inspired by the smooth procedural road mechanics of **Slow Roads** and the thril
 
 ## 🚦 How to Launch & Play
 
-### Option 1: Double-Click or Run with Python (Recommended)
-Open a terminal in this directory and run:
-```bash
-python server.py
-```
-*This starts a local server at `http://localhost:8080` and automatically opens your default browser with full Web Audio support.*
+### One-click launch (recommended)
 
-### Option 2: Run with Node / NPX
+From a terminal in this directory:
+
 ```bash
+./run.sh
+```
+
+You can also double-click `run.sh` in a Linux file manager configured to run shell files. The launcher prefers `uv` and uses `python3` automatically when uv is unavailable. It starts a local server at `http://localhost:8080/` and opens the game in your default browser.
+
+### Other launch options
+
+```bash
+# Same launcher through npm
+npm start
+
+# Direct Python fallback
+python3 server.py
+
+# Alternative static server
 npx serve .
 ```
 
-### Option 3: Direct File Open
-You can also directly double-click `index.html` in Chrome or Edge.
-
-> For full meme voice playback, use Option 1 or Option 2. The two WAV files are fetched from `assets/audio/`, so an HTTP server is the supported launch method. Three.js still loads from its CDN.
+> Use an HTTP server for full meme voice playback. The WAV files are fetched from `assets/audio/`, and Three.js still loads from its CDN.
 
 ---
 
