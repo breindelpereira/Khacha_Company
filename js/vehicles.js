@@ -162,7 +162,7 @@ class VehicleBuilder {
     root.add(group);
     root.userData = group.userData;
 
-    return root;
+    return window.detailBuilder.decorateVehicle(root, 'auto');
   }
 
   // 2. TATA FREIGHT TRUCK ("Horn OK Please")
@@ -265,7 +265,7 @@ class VehicleBuilder {
     root.add(group);
     root.userData = group.userData;
 
-    return root;
+    return window.detailBuilder.decorateVehicle(root, 'truck');
   }
 
   // 3. MARUTI SUZUKI SWIFT (Modern Hot Hatchback)
@@ -537,7 +537,7 @@ class VehicleBuilder {
     root.add(group);
     root.userData = group.userData;
 
-    return root;
+    return window.detailBuilder.decorateVehicle(root, 'car');
   }
 
   // Alias for backward compatibility

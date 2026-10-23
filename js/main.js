@@ -11,6 +11,14 @@ class Game {
     this.cameraMode = 0; // 0: Smooth Chase, 1: Close Hood, 2: Far Cinematic
     this.highScore = parseInt(localStorage.getItem('khacha_best') || localStorage.getItem('nh_odyssey_best') || '0', 10);
     this.lastRewardMilestone = 0;
+    this.progress = window.Progress.load(localStorage);
+    this.board = window.Progress.loadBoard(localStorage);
+    this.boardOpen = false;
+    this.boardFilter = 'all';
+    this.pendingEntry = null;   // finished run waiting for a name
+    this.lastEntryId = null;    // highlighted on the board
+    this.shake = 0;
+    this.gamepadWasActive = false;
 
     // Input State
     this.input = {
@@ -45,6 +53,20 @@ class Game {
       finalHorns: document.getElementById('final-horns'),
       finalScore: document.getElementById('final-score'),
       finalBest: document.getElementById('final-best'),
+      finalVehicleLabel: document.getElementById('final-vehicle-label'),
+      finalVehicleBest: document.getElementById('final-vehicle-best'),
+      newBestBadge: document.getElementById('new-best-badge'),
+      vehicleBestHint: document.getElementById('vehicle-best-hint'),
+      flowPoints: document.querySelector('#flow-toast .flow-points'),
+      boardOverlay: document.getElementById('leaderboard-overlay'),
+      boardList: document.getElementById('board-list'),
+      boardEmpty: document.getElementById('board-empty'),
+      boardTabs: document.querySelectorAll('.board-tab'),
+      boardClear: document.getElementById('board-clear'),
+      boardClose: document.getElementById('board-close'),
+      nameEntry: document.getElementById('name-entry'),
+      nameInput: document.getElementById('name-input'),
+      boardNote: document.getElementById('board-note'),
       driverRank: document.getElementById('driver-rank'),
       hudGear: document.getElementById('hud-gear'),
       chaiToast: document.getElementById('chai-toast'),
@@ -63,13 +85,14 @@ class Game {
       memeToggle: document.getElementById('meme-toggle')
     };
 
-    this.selectedVehicle = 'auto';
+    this.selectedVehicle = this.progress.lastVehicle;
 
     this.initThree();
     this.initEnvironment();
     this.initParticles();
     this.initManagers();
     this.initEvents();
+    this.syncVehicleButtons();
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
   }
@@ -134,19 +157,39 @@ class Game {
     this.scene.add(this.underglowLight);
 
     // Distant Mountain Ridgelines along Horizon (Western Ghats silhouette)
+    // Two ridgelines of faceted, jittered peaks; the far one is hazier (colour set in updateEnvironment)
     this.mountainGroup = new THREE.Group();
-    const mMat = new THREE.MeshLambertMaterial({ color: 0x935c3c });
+    this.mountainMatNear = new THREE.MeshPhongMaterial({ color: 0x935c3c, flatShading: true, specular: 0x000000 });
+    this.mountainMatFar = new THREE.MeshPhongMaterial({ color: 0x8a6a58, flatShading: true, specular: 0x000000 });
+    const addPeak = (mat, h, rad, x, z) => {
+      const geo = new THREE.ConeGeometry(rad, h, 7, 3);
+      const p = geo.attributes.position;
+      for (let v = 0; v < p.count; v++) {
+        if (p.getY(v) > h * 0.49) continue; // keep the apex sharp
+        p.setX(v, p.getX(v) + (Math.random() - 0.5) * rad * 0.28);
+        p.setZ(v, p.getZ(v) + (Math.random() - 0.5) * rad * 0.28);
+        p.setY(v, p.getY(v) + (Math.random() - 0.5) * h * 0.08);
+      }
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, h * 0.45, z);
+      this.mountainGroup.add(mesh);
+    };
     for (let m = 0; m < 26; m++) {
-      const h = 40 + Math.random() * 55;
-      const rad = 45 + Math.random() * 40;
-      const mGeo = new THREE.ConeGeometry(rad, h, 6);
-      const mMesh = new THREE.Mesh(mGeo, mMat);
       const side = (m % 2 === 0 ? 1 : -1);
-      const dist = 210 + Math.random() * 70;
-      mMesh.position.set(side * dist, h * 0.45, -m * 45);
-      this.mountainGroup.add(mMesh);
+      addPeak(this.mountainMatNear, 40 + Math.random() * 55, 45 + Math.random() * 40, side * (210 + Math.random() * 70), -m * 45);
+    }
+    for (let m = 0; m < 14; m++) {
+      const side = (m % 2 === 0 ? -1 : 1);
+      addPeak(this.mountainMatFar, 80 + Math.random() * 70, 70 + Math.random() * 50, side * (330 + Math.random() * 90), -m * 80 - 20);
     }
     this.scene.add(this.mountainGroup);
+
+    // Sun / moon, clouds and stars that follow the camera
+    this.sky = window.detailBuilder.createSky();
+    this.scene.add(this.sky.group);
+    this.baseMountainNear = new THREE.Color(0x935c3c);
+    this.baseMountainFar = new THREE.Color(0x8a6a58);
   }
 
   // Particle System for 2-stroke exhaust smoke & boost sparks
@@ -209,13 +252,22 @@ class Game {
 
   initEvents() {
     // Keyboard Events
+    // Typing a name must not drive the car, pick a ride or restart the game
+    const typing = (e) => {
+      const active = document.activeElement;
+      return (active && active.tagName === 'INPUT') || (e.target && e.target.tagName === 'INPUT');
+    };
     window.addEventListener('keydown', (e) => {
+      if (typing(e) || e.repeat) return;
       this.handleInput(e.code, true);
     });
 
     window.addEventListener('keyup', (e) => {
+      if (typing(e)) return;
       this.handleInput(e.code, false);
     });
+
+    this.initLeaderboardEvents();
 
     // Vehicle Selector click handling
     const vButtons = document.querySelectorAll('.v-btn');
@@ -234,10 +286,14 @@ class Game {
     this.dom.restartBtn.addEventListener('click', () => this.startGame());
 
     this.dom.hornBtn.addEventListener('mousedown', () => this.triggerHorn());
+    this.dom.hornBtn.addEventListener('mouseup', () => this.releaseHorn());
+    this.dom.hornBtn.addEventListener('mouseleave', () => this.releaseHorn());
     this.dom.hornBtn.addEventListener('touchstart', (e) => {
       e.preventDefault();
       this.triggerHorn();
     });
+    this.dom.hornBtn.addEventListener('touchend', () => this.releaseHorn());
+    this.dom.hornBtn.addEventListener('touchcancel', () => this.releaseHorn());
 
     // Pause / Resume Handlers
     if (this.dom.pauseBtn) {
@@ -308,8 +364,12 @@ class Game {
     });
 
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) window.soundEngine.stopReward();
+      if (document.hidden) {
+        window.soundEngine.stopReward();
+        this.pauseGame();
+      }
     });
+    window.addEventListener('blur', () => this.pauseGame());
 
     // Keep retrying on user gestures if the browser initially blocks audio.
     const activateAudio = () => {
@@ -339,9 +399,160 @@ class Game {
     });
   }
 
+  // ---------------------------------------------------------------- leaderboard
+  initLeaderboardEvents() {
+    document.querySelectorAll('.js-open-board').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.currentTarget.blur(); // keep Space/Enter from re-activating the button later
+        this.openBoard();
+      });
+    });
+    this.dom.boardClose.addEventListener('click', (e) => { e.currentTarget.blur(); this.closeBoard(); });
+    this.dom.boardTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        this.setBoardFilter(tab.getAttribute('data-filter'));
+        e.currentTarget.blur();
+      });
+    });
+
+    // Clearing needs a second click within 3 seconds so it can't happen by accident
+    this.dom.boardClear.addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      if (!btn.classList.contains('armed')) {
+        btn.classList.add('armed');
+        btn.textContent = 'SURE? CLICK AGAIN';
+        clearTimeout(this.clearTimeout);
+        this.clearTimeout = setTimeout(() => this.disarmClear(), 3000);
+        return;
+      }
+      this.disarmClear();
+      this.board = [];
+      this.lastEntryId = null;
+      window.Progress.saveBoard(localStorage, this.board);
+      this.renderBoard();
+      btn.blur();
+    });
+
+    this.dom.nameEntry.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.commitPendingEntry();
+    });
+  }
+
+  disarmClear() {
+    clearTimeout(this.clearTimeout);
+    this.dom.boardClear.classList.remove('armed');
+    this.dom.boardClear.textContent = 'CLEAR BOARD';
+  }
+
+  openBoard() {
+    this.boardOpen = true;
+    this.renderBoard();
+    this.dom.boardOverlay.classList.remove('hidden');
+  }
+
+  closeBoard() {
+    this.boardOpen = false;
+    this.disarmClear();
+    this.dom.boardOverlay.classList.add('hidden');
+  }
+
+  setBoardFilter(filter) {
+    this.boardFilter = filter;
+    this.renderBoard();
+  }
+
+  cycleBoardFilter(step) {
+    const filters = ['all', ...window.Progress.VEHICLES];
+    const next = (filters.indexOf(this.boardFilter) + step + filters.length) % filters.length;
+    this.setBoardFilter(filters[next]);
+  }
+
+  renderBoard() {
+    const icons = { auto: '🛺', car: '🚗', truck: '🚛' };
+    this.dom.boardTabs.forEach(tab => {
+      tab.classList.toggle('active', tab.getAttribute('data-filter') === this.boardFilter);
+    });
+    const rows = window.Progress.boardView(this.board, this.boardFilter);
+    this.dom.boardEmpty.classList.toggle('hidden', rows.length > 0);
+    this.dom.boardList.replaceChildren();
+    rows.forEach((entry, i) => {
+      const li = document.createElement('li');
+      li.className = 'board-row' + (entry.id === this.lastEntryId ? ' mine' : '');
+      const cell = (cls, text) => {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = text; // textContent only: names are user input
+        li.appendChild(span);
+      };
+      cell('board-rank', String(i + 1));
+      cell('board-name', entry.name);
+      cell('board-ride', icons[entry.vehicle] || '');
+      cell('board-dist', `${entry.distanceKm.toFixed(2)} KM`);
+      cell('board-score', entry.score.toLocaleString());
+      this.dom.boardList.appendChild(li);
+    });
+  }
+
+  // Ask for a name when the run reaches the board; otherwise hint at what it takes to get on
+  prepareNameEntry(finalScore) {
+    const P = window.Progress;
+    const entry = {
+      score: finalScore,
+      vehicle: this.selectedVehicle,
+      distanceKm: +(this.traffic.distanceCovered / 1000).toFixed(2),
+      at: Date.now()
+    };
+    this.dom.nameInput.blur();
+    this.dom.boardNote.classList.add('hidden');
+    if (P.qualifies(this.board, finalScore, this.selectedVehicle)) {
+      this.pendingEntry = entry;
+      const rank = P.rankFor(this.board, finalScore);
+      this.dom.nameEntry.querySelector('label').textContent = rank <= P.BOARD_SHOW
+        ? `YOU MADE THE LEADERBOARD (#${rank})! ENTER YOUR NAME`
+        : 'TOP 10 FOR THIS RIDE! ENTER YOUR NAME';
+      this.dom.nameInput.value = '';
+      this.dom.nameEntry.classList.remove('hidden');
+      // Delay focus so a still-held steering key doesn't type into the box
+      clearTimeout(this.nameFocusTimeout);
+      this.nameFocusTimeout = setTimeout(() => {
+        if (this.pendingEntry) this.dom.nameInput.focus();
+      }, 1500);
+    } else {
+      this.pendingEntry = null;
+      this.dom.nameEntry.classList.add('hidden');
+      if (finalScore > 0 && this.board.length >= P.BOARD_SHOW) {
+        const tenth = P.boardView(this.board, 'all')[P.BOARD_SHOW - 1];
+        this.dom.boardNote.textContent = `BEAT ${tenth.score.toLocaleString()} TO ENTER THE TOP ${P.BOARD_SHOW}`;
+        this.dom.boardNote.classList.remove('hidden');
+      }
+    }
+  }
+
+  // Saves the waiting run under the typed name (or GUEST if nobody typed one)
+  commitPendingEntry() {
+    if (!this.pendingEntry) return;
+    const P = window.Progress;
+    const result = P.addEntry(this.board, { ...this.pendingEntry, name: this.dom.nameInput.value });
+    this.pendingEntry = null;
+    clearTimeout(this.nameFocusTimeout);
+    this.board = result.list;
+    this.lastEntryId = result.entry.id;
+    P.saveBoard(localStorage, this.board);
+    const rank = this.board.findIndex(e => e.id === result.entry.id) + 1;
+    this.dom.nameInput.blur();
+    this.dom.nameEntry.classList.add('hidden');
+    this.dom.boardNote.textContent = `SAVED AS ${result.entry.name} • OVERALL RANK #${rank}`;
+    this.dom.boardNote.classList.remove('hidden');
+    if (this.boardOpen) this.renderBoard();
+  }
+
   pauseGame() {
     if (this.state !== 'PLAYING') return;
     this.state = 'PAUSED';
+    this.input.horn = false;
+    this.releaseHorn();
     window.soundEngine.stopEngine();
     window.soundEngine.stopReward();
     this.dom.pauseOverlay.classList.remove('hidden');
@@ -372,19 +583,23 @@ class Game {
     }
   }
 
-  selectVehicle(type) {
-    if (!['auto', 'car', 'truck'].includes(type)) return;
-    this.selectedVehicle = type;
-
-    // Update active state on all vehicle selection buttons across all screens
-    const vButtons = document.querySelectorAll('.v-btn');
-    vButtons.forEach(btn => {
-      if (btn.getAttribute('data-v') === type) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+  // Highlight the selected ride on every screen and show its personal best
+  syncVehicleButtons() {
+    document.querySelectorAll('.v-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-v') === this.selectedVehicle);
     });
+    if (this.dom.vehicleBestHint) {
+      const best = this.progress.best[this.selectedVehicle] || 0;
+      this.dom.vehicleBestHint.innerText = `RIDE BEST: ${best.toLocaleString()}`;
+    }
+  }
+
+  selectVehicle(type) {
+    if (!window.Progress.VEHICLES.includes(type)) return;
+    this.selectedVehicle = type;
+    this.progress.lastVehicle = type;
+    window.Progress.save(localStorage, this.progress);
+    this.syncVehicleButtons();
 
     // Switch 3D vehicle model in real time (smooth swap)
     if (this.traffic) {
@@ -416,6 +631,26 @@ class Game {
   }
 
   handleInput(code, isPressed) {
+    // Releasing the horn must work in any state (e.g. after pausing while it was held)
+    if (!isPressed && (code === 'Space' || code === 'KeyH')) {
+      this.input.horn = false;
+      this.releaseHorn();
+    }
+
+    // Leaderboard: L opens it from the menus, and while it is open it owns the keyboard
+    if (this.boardOpen) {
+      if (isPressed) {
+        if (code === 'Escape' || code === 'KeyL' || code === 'Enter') this.closeBoard();
+        else if (code === 'ArrowLeft') this.cycleBoardFilter(-1);
+        else if (code === 'ArrowRight') this.cycleBoardFilter(1);
+      }
+      return;
+    }
+    if (isPressed && code === 'KeyL' && ['ATTRACT', 'PAUSED', 'GAMEOVER'].includes(this.state)) {
+      this.openBoard();
+      return;
+    }
+
     // 1. Vehicle selection hotkeys work anytime (Attract, Playing, Paused, or Game Over)
     if (isPressed) {
       if (code === 'Digit1' || code === 'Numpad1') {
@@ -540,22 +775,34 @@ class Game {
 
     // Left Stick / D-pad
     const stickX = gp.axes[0] || 0;
-    this.input.left = stickX < -0.2 || gp.buttons[14]?.pressed;
-    this.input.right = stickX > 0.2 || gp.buttons[15]?.pressed;
+    const left = stickX < -0.2 || !!gp.buttons[14]?.pressed;
+    const right = stickX > 0.2 || !!gp.buttons[15]?.pressed;
 
     // Trigger / Gas (Right Trigger or A button)
     const rt = gp.buttons[7]?.value || (gp.buttons[0]?.pressed ? 1 : 0);
-    this.input.up = rt > 0.1 || gp.buttons[12]?.pressed;
+    const up = rt > 0.1 || !!gp.buttons[12]?.pressed;
 
     // Brake (Left Trigger or B button)
     const lt = gp.buttons[6]?.value || (gp.buttons[1]?.pressed ? 1 : 0);
-    this.input.down = lt > 0.1 || gp.buttons[13]?.pressed;
+    const down = lt > 0.1 || !!gp.buttons[13]?.pressed;
+
+    // Only write driving input while the pad is in use (and once more to release),
+    // so an idle connected controller doesn't cancel keyboard input.
+    const gamepadActive = left || right || up || down;
+    if (gamepadActive || this.gamepadWasActive) {
+      this.input.left = left;
+      this.input.right = right;
+      this.input.up = up;
+      this.input.down = down;
+    }
+    this.gamepadWasActive = gamepadActive;
 
     // Horn (X button or RB)
     if ((gp.buttons[2]?.pressed || gp.buttons[5]?.pressed) && !this.input.horn) {
       this.triggerHorn();
       this.input.horn = true;
     } else if (!gp.buttons[2]?.pressed && !gp.buttons[5]?.pressed) {
+      if (this.input.horn) this.releaseHorn();
       this.input.horn = false;
     }
 
@@ -571,7 +818,11 @@ class Game {
   triggerHorn() {
     this.traffic.triggerHorn();
     this.dom.hornBtn.classList.add('active');
-    setTimeout(() => this.dom.hornBtn.classList.remove('active'), 250);
+  }
+
+  releaseHorn() {
+    window.soundEngine.stopHorn();
+    this.dom.hornBtn.classList.remove('active');
   }
 
   playRewardFeedback(stats) {
@@ -587,6 +838,7 @@ class Game {
   }
 
   startGame() {
+    this.commitPendingEntry();
     window.soundEngine.ensureContext();
     window.soundEngine.resetRewards();
     window.soundEngine.startEngine();
@@ -627,6 +879,9 @@ class Game {
   triggerCrash() {
     this.state = 'CRASH';
     this.crashTimer = 1.8;
+    this.shake = 1.0;
+    this.input.horn = false;
+    this.releaseHorn();
     window.soundEngine.playCrash();
     window.soundEngine.stopEngine();
     window.soundEngine.stopReward();
@@ -653,30 +908,28 @@ class Game {
     this.dom.finalScore.innerText = finalScore.toLocaleString();
     this.dom.finalBest.innerText = this.highScore.toLocaleString();
 
-    // Driver Rank Evaluation
-    let rank = 'HIGHWAY SULTAN';
-    if (finalScore > 35000) rank = '👑 KHACHA COMPANY EMPEROR';
-    else if (finalScore > 25000) rank = '⚡ DESI DRIFT RAJA';
-    else if (finalScore > 15000) rank = '🏎️ EXPRESS CRUISER';
-    else if (finalScore > 8000) rank = '🚗 PUNCTUAL COMMUTER';
-    else rank = '🚦 LEARNER LICENSE (NEED MORE KHACHA ENERGY)';
-    this.dom.driverRank.innerText = 'RANK: ' + rank;
+    this.dom.driverRank.innerText = 'RANK: ' + window.Progress.rankForScore(finalScore);
 
-    // Sync vehicle buttons on the challan screen
-    const vButtons = document.querySelectorAll('.v-btn');
-    vButtons.forEach(btn => {
-      if (btn.getAttribute('data-v') === this.selectedVehicle) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
+    // Per-vehicle progression
+    const run = window.Progress.recordRun(this.progress, this.selectedVehicle, finalScore);
+    window.Progress.save(localStorage, this.progress);
+    const vehicleNames = { auto: 'AUTO', car: 'SWIFT', truck: 'TRUCK' };
+    this.dom.finalVehicleLabel.innerText = `${vehicleNames[this.selectedVehicle]} BEST`;
+    this.dom.finalVehicleBest.innerText = this.progress.best[this.selectedVehicle].toLocaleString();
+    this.dom.newBestBadge.classList.toggle('hidden', !(run.isNewBest && finalScore > 0));
+
+    this.syncVehicleButtons();
+    this.prepareNameEntry(finalScore);
 
     this.dom.hud.classList.add('hidden');
     this.dom.gameoverOverlay.classList.remove('hidden');
   }
 
-  showNearMissToast() {
+  showNearMissToast(streak, points) {
+    if (this.dom.flowPoints) {
+      this.dom.flowPoints.innerText = window.Progress.nearMissLabel(streak, points);
+    }
+    this.shake = Math.max(this.shake, 0.15);
     this.dom.flowToast.classList.add('active');
     clearTimeout(this.toastTimeout);
     this.toastTimeout = setTimeout(() => {
@@ -767,6 +1020,24 @@ class Game {
       badgeText = '🌃 NEON URBAN OUTSKIRTS • MIDNIGHT';
     }
 
+    // 0 in daylight, 1 deep into the night
+    const nightFactor = dist < 180 ? 0 : (dist < 480 ? ((dist - 180) / 300) * 0.6 : 0.6 + Math.min((dist - 480) / 240, 1.0) * 0.4);
+
+    // Sky dressing: sun turns into a small cool moon, clouds take the sky tint, stars fade in
+    if (this.sky) {
+      this.sky.sun.material.color.copy(sunCol);
+      const sunSize = THREE.MathUtils.lerp(130, 55, nightFactor);
+      this.sky.sun.scale.set(sunSize, sunSize, 1);
+      this.sky.clouds.forEach(c => {
+        c.material.color.copy(skyCol).lerp(this._white || (this._white = new THREE.Color(0xffffff)), 0.55 * (1 - nightFactor));
+        c.material.opacity = 0.7 - nightFactor * 0.45;
+      });
+      this.sky.stars.material.opacity = Math.max(0, (nightFactor - 0.35) / 0.65);
+    }
+    // Distant ridges pick up the sky colour for atmospheric depth
+    this.mountainMatNear.color.copy(this.baseMountainNear).lerp(skyCol, 0.18 + nightFactor * 0.3);
+    this.mountainMatFar.color.copy(this.baseMountainFar).lerp(skyCol, 0.5 + nightFactor * 0.25);
+
     // Apply colors to scene background & fog
     this.scene.background.copy(skyCol);
     if (this.scene.fog) {
@@ -832,7 +1103,7 @@ class Game {
     // Session Timer (40s sprint)
     const secsLeft = Math.ceil(this.sessionTimer);
     this.dom.hudTimer.innerHTML = secsLeft + '<small>S</small>';
-    this.dom.hudTimerBar.style.width = (this.sessionTimer / 40 * 100) + '%';
+    this.dom.hudTimerBar.style.width = window.Progress.timerBarPercent(this.sessionTimer) + '%';
   }
 
   getCameraConfig(type = this.selectedVehicle) {
@@ -940,6 +1211,16 @@ class Game {
       this.camera.lookAt(lookX, lookY, lookZ);
     }
 
+    // Sky follows the camera so sun, clouds and stars stay at infinity
+    if (this.sky) this.sky.group.position.copy(this.camera.position);
+
+    // Screen shake (crash and near-miss feedback); lookAt above resets rotation each frame
+    if (this.shake > 0.01) {
+      this.camera.rotation.z += (Math.random() - 0.5) * this.shake * 0.06;
+      this.camera.rotation.x += (Math.random() - 0.5) * this.shake * 0.03;
+      this.shake *= Math.max(0, 1 - delta * 6);
+    }
+
     // Keep Directional Sunlight following player
     this.sunLight.position.z = playerPos.z - 180;
     this.sunLight.target.position.copy(playerPos);
@@ -999,24 +1280,25 @@ class Game {
       }
 
       if (stats.nearMiss) {
-        this.showNearMissToast();
+        this.showNearMissToast(stats.flowStreak, stats.nearMissPoints);
       }
 
       if (stats.crashed) {
         this.triggerCrash();
       }
     } else if (this.state === 'CRASH') {
-      this.traffic.doCrashTumble(delta);
+      this.traffic.doCrashTumble(delta * 0.45); // slow-motion tumble
       this.crashTimer -= delta;
       if (this.crashTimer <= 0) {
         this.endSession();
       }
     } else if (this.state === 'GAMEOVER') {
-      // Auto-reset countdown
-      this.autoResetTimer -= delta;
+      // Auto-reset countdown (holds still while someone is typing their name)
+      if (document.activeElement !== this.dom.nameInput) this.autoResetTimer -= delta;
       this.dom.autoResetTimer.innerText = Math.max(Math.ceil(this.autoResetTimer), 0);
       if (this.autoResetTimer <= 0) {
         // Return to Attract Mode with clean world
+        this.commitPendingEntry();
         this.state = 'ATTRACT';
         this.road.reset(0);
         this.traffic.reset(0, this.selectedVehicle);

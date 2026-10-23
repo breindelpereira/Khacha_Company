@@ -1,6 +1,8 @@
 // Procedural Web Audio API sound engine for NH Odyssey
 // Zero external files required — 100% reliable local offline playback
 
+const BULB_MAKEUP = 5;
+
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -10,7 +12,12 @@ class SoundEngine {
     this.engineOsc2 = null;
     this.engineFilter = null;
     this.isEngineRunning = false;
-    this.isHornPlaying = false;
+    this.hornVoice = null;
+    this.hornProfiles = {
+      car: { kind: 'electric', tones: [420, 525], level: 0.4, attack: 0.012, release: 0.07, minHold: 0.22 },
+      auto: { kind: 'bulb', level: 0.34, phraseLength: 0.5 },
+      truck: { kind: 'air', tones: [207.65, 261.63, 311.13], level: 0.5, attack: 0.045, release: 0.24, minHold: 0.35 }
+    };
     this.masterGain = null;
     this.isMemeMuted = false;
     this.rewardSource = null;
@@ -139,6 +146,7 @@ class SoundEngine {
   }
 
   stopReward() {
+    this.stopHorn();
     if (!this.rewardSource) return;
     try { this.rewardSource.stop(); } catch (e) {}
     this.rewardSource = null;
@@ -255,59 +263,237 @@ class SoundEngine {
     } catch(e) {}
   }
 
-  // Authentic Indian Multi-Tone Musical Brass Horn (Pee-Poo-Pee-Poo)
-  playHorn() {
+  // ---------------------------------------------------------------- horns
+  // Each ride has its own horn. Electric and air horns sound for as long as the key is held
+  // (with a short minimum so a tap still sounds like a honk); the rubber-bulb horn is a fixed
+  // "pa-paawn" phrase.
+  //   car:   twin-tone electric disc horn (two notes about a fourth apart, buzzing diaphragm)
+  //   auto:  reedy rubber-bulb horn
+  //   truck: compressed-air horn, a deep three-note chord with a hiss of air on the attack
+  startHorn(type = 'car') {
     this.ensureContext();
-    if (!this.ctx || this.isHornPlaying) return;
-    this.isHornPlaying = true;
-
+    if (!this.ctx || this.hornVoice) return false;
+    const profile = this.hornProfiles[type] || this.hornProfiles.car;
     const now = this.ctx.currentTime;
-    const masterGain = this.ctx.createGain();
-    masterGain.gain.setValueAtTime(0.32, now);
-    masterGain.connect(this.getOutput());
 
-    // Multi-harmonic horn chords
-    const notes = [
-      { f1: 523.25, f2: 659.25, start: 0, dur: 0.14 },    // C5 + E5
-      { f1: 659.25, f2: 783.99, start: 0.14, dur: 0.14 }, // E5 + G5
-      { f1: 523.25, f2: 659.25, start: 0.28, dur: 0.14 }, // C5 + E5
-      { f1: 783.99, f2: 1046.5, start: 0.42, dur: 0.35 }  // G5 + C6 flourish
-    ];
+    const out = this.ctx.createGain();
+    out.gain.setValueAtTime(0.32, now);
+    out.connect(this.getOutput());
 
-    notes.forEach(note => {
-      const osc1 = this.ctx.createOscillator();
-      const osc2 = this.ctx.createOscillator();
-      const filter = this.ctx.createBiquadFilter();
-      const noteGain = this.ctx.createGain();
+    const voice = { profile, out, oscs: [], amp: null, startedAt: now, released: false };
+    if (profile.kind === 'bulb') this.buildBulbHorn(voice, now);
+    else if (profile.kind === 'air') this.buildAirHorn(voice, now);
+    else this.buildElectricHorn(voice, now);
+    this.hornVoice = voice;
 
-      osc1.type = 'sawtooth';
-      osc2.type = 'triangle';
-      osc1.frequency.setValueAtTime(note.f1, now + note.start);
-      osc2.frequency.setValueAtTime(note.f2, now + note.start);
+    // Bulb horn ends by itself; the others get a failsafe in case the release never arrives
+    this.endHornLater(voice, profile.kind === 'bulb' ? profile.phraseLength : 5);
+    return true;
+  }
 
-      // Brass envelope filter
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(note.f1 * 1.5, now + note.start);
-      filter.Q.setValueAtTime(3.0, now + note.start);
+  endHornLater(voice, seconds) {
+    const timer = setTimeout(() => {
+      if (this.hornVoice === voice) this.hornVoice = null;
+      if (voice.profile.kind !== 'bulb') this.releaseHornVoice(voice);
+    }, seconds * 1000);
+    if (timer && timer.unref) timer.unref();
+    voice.timer = timer;
+  }
 
-      noteGain.gain.setValueAtTime(0, now + note.start);
-      noteGain.gain.linearRampToValueAtTime(0.36, now + note.start + 0.02);
-      noteGain.gain.exponentialRampToValueAtTime(0.001, now + note.start + note.dur);
+  // Key released: let the note ring for its minimum length, then release
+  stopHorn() {
+    const voice = this.hornVoice;
+    if (!voice || voice.profile.kind === 'bulb') return;
+    this.hornVoice = null;
+    clearTimeout(voice.timer);
+    this.releaseHornVoice(voice);
+  }
 
-      osc1.connect(filter);
-      osc2.connect(filter);
-      filter.connect(noteGain);
-      noteGain.connect(masterGain);
+  releaseHornVoice(voice) {
+    if (voice.released || !this.ctx) return;
+    voice.released = true;
+    const { profile, amp } = voice;
+    const now = this.ctx.currentTime;
+    const at = Math.max(now, voice.startedAt + (profile.minHold || 0));
+    const end = at + profile.release;
+    if (amp) {
+      if (amp.gain.cancelScheduledValues) amp.gain.cancelScheduledValues(at);
+      amp.gain.setValueAtTime(amp.gain.value, at);
+      amp.gain.linearRampToValueAtTime(0.0001, end);
+    }
+    // Air horns drop a little in pitch as the pressure bleeds off
+    if (profile.kind === 'air') {
+      voice.oscs.forEach(o => {
+        if (o.frequency.cancelScheduledValues) o.frequency.cancelScheduledValues(at);
+        o.frequency.setValueAtTime(o.frequency.value, at);
+        o.frequency.linearRampToValueAtTime(o.frequency.value * 0.96, end);
+      });
+    }
+    voice.oscs.forEach(o => { try { o.stop(end + 0.05); } catch (e) {} });
+  }
 
-      osc1.start(now + note.start);
-      osc2.start(now + note.start);
-      osc1.stop(now + note.start + note.dur);
-      osc2.stop(now + note.start + note.dur);
+  makeNoise(seconds) {
+    const length = Math.max(1, Math.floor(this.ctx.sampleRate * seconds));
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    return src;
+  }
+
+  // Twin-tone electric disc horn: two buzzy square tones with a vibrating-diaphragm flutter
+  buildElectricHorn(voice, now) {
+    const { profile, out } = voice;
+    const amp = this.ctx.createGain();
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(profile.level, now + profile.attack);
+    const body = this.ctx.createBiquadFilter();
+    body.type = 'lowpass';
+    body.frequency.setValueAtTime(3200, now);
+    const horn = this.ctx.createBiquadFilter(); // trumpet-shaped resonance
+    horn.type = 'bandpass';
+    horn.frequency.setValueAtTime(1300, now);
+    horn.Q.setValueAtTime(0.9, now);
+
+    profile.tones.forEach((f, i) => {
+      const sq = this.ctx.createOscillator();
+      const saw = this.ctx.createOscillator();
+      sq.type = 'square';
+      saw.type = 'sawtooth';
+      sq.frequency.setValueAtTime(f * 1.04, now);
+      sq.frequency.setTargetAtTime(f, now, 0.02); // brief pitch scoop as the diaphragm starts
+      saw.frequency.setValueAtTime(f * (1.004 + i * 0.002), now);
+      const sawGain = this.ctx.createGain();
+      sawGain.gain.setValueAtTime(0.5, now);
+      sq.connect(body);
+      saw.connect(sawGain);
+      sawGain.connect(body);
+      sq.start(now);
+      saw.start(now);
+      voice.oscs.push(sq, saw);
     });
 
-    setTimeout(() => {
-      this.isHornPlaying = false;
-    }, 750);
+    // Diaphragm flutter modulating the amplitude
+    const lfo = this.ctx.createOscillator();
+    const lfoDepth = this.ctx.createGain();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(92, now);
+    lfoDepth.gain.setValueAtTime(profile.level * 0.18, now);
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(amp.gain);
+    lfo.start(now);
+    voice.oscs.push(lfo);
+
+    body.connect(horn);
+    horn.connect(amp);
+    amp.connect(out);
+    voice.amp = amp;
+  }
+
+  // Rubber-bulb horn: nasal reed, two squeezes ("pa-paawn")
+  buildBulbHorn(voice, now) {
+    const { profile, out } = voice;
+    const pulses = [
+      { at: 0, dur: 0.11, f0: 330, f1: 355 },
+      { at: 0.16, dur: 0.3, f0: 292, f1: 345 }
+    ];
+    pulses.forEach(p => {
+      const t0 = now + p.at;
+      const reed = this.ctx.createOscillator();
+      const buzz = this.ctx.createOscillator();
+      reed.type = 'sawtooth';
+      buzz.type = 'square';
+      reed.frequency.setValueAtTime(p.f0, t0);
+      reed.frequency.linearRampToValueAtTime(p.f1, t0 + p.dur * 0.7);
+      buzz.frequency.setValueAtTime(p.f0 * 2.01, t0);
+      buzz.frequency.linearRampToValueAtTime(p.f1 * 2.01, t0 + p.dur * 0.7);
+      const buzzGain = this.ctx.createGain();
+      buzzGain.gain.setValueAtTime(0.25, t0);
+      const nasal = this.ctx.createBiquadFilter();
+      nasal.type = 'bandpass';
+      nasal.frequency.setValueAtTime(1250, t0);
+      nasal.Q.setValueAtTime(2.2, t0);
+      const amp = this.ctx.createGain();
+      amp.gain.setValueAtTime(0, t0);
+      // The narrow reed filter removes most of the signal, so make the level back up
+      const level = profile.level * BULB_MAKEUP;
+      amp.gain.linearRampToValueAtTime(level, t0 + 0.012);
+      amp.gain.setValueAtTime(level, t0 + p.dur - 0.04);
+      amp.gain.linearRampToValueAtTime(0.0001, t0 + p.dur);
+      reed.connect(nasal);
+      buzz.connect(buzzGain);
+      buzzGain.connect(nasal);
+      nasal.connect(amp);
+      amp.connect(out);
+      reed.start(t0);
+      buzz.start(t0);
+      reed.stop(t0 + p.dur + 0.02);
+      buzz.stop(t0 + p.dur + 0.02);
+    });
+  }
+
+  // Compressed-air horn: three-note chord, slow swell, hiss of air on the attack
+  buildAirHorn(voice, now) {
+    const { profile, out } = voice;
+    const amp = this.ctx.createGain();
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(profile.level * 1.2, now + profile.attack); // overshoot as the pressure hits
+    amp.gain.linearRampToValueAtTime(profile.level, now + profile.attack + 0.14);
+    const body = this.ctx.createBiquadFilter();
+    body.type = 'lowpass';
+    body.frequency.setValueAtTime(1700, now);
+    body.Q.setValueAtTime(1.2, now);
+
+    profile.tones.forEach(f => {
+      const saw = this.ctx.createOscillator();
+      const sub = this.ctx.createOscillator();
+      saw.type = 'sawtooth';
+      sub.type = 'triangle';
+      saw.frequency.setValueAtTime(f * 0.97, now);
+      saw.frequency.setTargetAtTime(f, now, 0.05);
+      sub.frequency.setValueAtTime(f * 0.5, now);
+      const subGain = this.ctx.createGain();
+      subGain.gain.setValueAtTime(0.6, now);
+      saw.connect(body);
+      sub.connect(subGain);
+      subGain.connect(body);
+      saw.start(now);
+      sub.start(now);
+      voice.oscs.push(saw, sub);
+    });
+
+    // Slow breath wobble so the three notes don't sound locked together
+    const lfo = this.ctx.createOscillator();
+    const lfoDepth = this.ctx.createGain();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(5.5, now);
+    lfoDepth.gain.setValueAtTime(profile.level * 0.05, now);
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(amp.gain);
+    lfo.start(now);
+    voice.oscs.push(lfo);
+
+    const hiss = this.makeNoise(0.3);
+    const hissFilter = this.ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.setValueAtTime(3500, now);
+    const hissGain = this.ctx.createGain();
+    hissGain.gain.setValueAtTime(0.14, now);
+    hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    hiss.connect(hissFilter);
+    hissFilter.connect(hissGain);
+    hissGain.connect(out);
+    hiss.start(now);
+
+    body.connect(amp);
+    amp.connect(out);
+    voice.amp = amp;
+  }
+
+  // A quick tap: sounds for the profile's minimum length
+  playHorn(type = 'car') {
+    if (this.startHorn(type)) this.stopHorn();
   }
 
   // Smooth wind rush / whoosh on high-speed near-miss

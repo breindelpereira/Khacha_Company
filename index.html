@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Khacha Company | Desi Highway Racer</title>
-  <link rel="stylesheet" href="style.css?v=2.3">
+  <link rel="stylesheet" href="style.css?v=4.1">
   <!-- Google Fonts for sleek & stylish typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -147,26 +147,27 @@
       <!-- Vehicle Selector -->
       <div class="vehicle-picker-box">
         <span class="v-picker-title">CHOOSE YOUR RIDE [CLICK OR PRESS 1, 2, OR 3]</span>
+        <span class="v-picker-title" id="vehicle-best-hint">RIDE BEST: 0</span>
         <div class="v-buttons" id="v-selector">
           <button class="v-btn active" data-v="auto">
             <span class="v-icon">🛺</span>
             <div class="v-details">
               <span class="v-name">AUTO-RICKSHAW</span>
-              <span class="v-spec">Agile &bull; 95 KM/H &bull; +8s Cutting Chai [1]</span>
+              <span class="v-spec">Nimble &bull; 95 KM/H &bull; +8s Cutting Chai [1]</span>
             </div>
           </button>
           <button class="v-btn" data-v="car">
             <span class="v-icon">🚗</span>
             <div class="v-details">
               <span class="v-name">MARUTI SWIFT</span>
-              <span class="v-spec">Hatchback &bull; 118 KM/H &bull; +5s Sting Red [2]</span>
+              <span class="v-spec">Sharp steering &bull; 118 KM/H &bull; +5s Sting Red [2]</span>
             </div>
           </button>
           <button class="v-btn" data-v="truck">
             <span class="v-icon">🚛</span>
             <div class="v-details">
               <span class="v-name">TATA TRUCK</span>
-              <span class="v-spec">Beast &bull; 82 KM/H &bull; +10s Kesari Vimal [3]</span>
+              <span class="v-spec">Heavy steering &bull; 82 KM/H &bull; +10s Kesari Vimal [3]</span>
             </div>
           </button>
         </div>
@@ -177,6 +178,7 @@
         <span class="controller-hint">🎮 Gamepad & Keyboard Ready</span>
         <button class="audio-toggle" id="test-memes" type="button" title="Enables sound and previews each meme clip">Enable sound & test memes</button>
         <span id="audio-test-status" role="status" aria-live="polite"></span>
+        <button class="board-btn js-open-board" type="button">🏆 LEADERBOARD [L]</button>
       </div>
     </div>
     <div class="cinema-letterbox bottom"></div>
@@ -217,21 +219,35 @@
           <span>TODAY'S BOOTH BEST</span>
           <strong id="final-best">0</strong>
         </div>
+        <div class="challan-row best-score">
+          <span id="final-vehicle-label">RIDE BEST</span>
+          <strong id="final-vehicle-best">0</strong>
+        </div>
+        <div class="new-best-badge hidden" id="new-best-badge">🏆 NEW PERSONAL BEST FOR THIS RIDE!</div>
         <div class="driver-rank-box" id="driver-rank">
           RANK: HIGHWAY SULTAN
         </div>
+        <form class="name-entry hidden" id="name-entry" autocomplete="off">
+          <label for="name-input">YOU MADE THE LEADERBOARD! ENTER YOUR NAME</label>
+          <div class="name-row">
+            <input id="name-input" type="text" maxlength="12" placeholder="YOUR NAME" spellcheck="false" autocomplete="off">
+            <button type="submit" id="name-save">SAVE</button>
+          </div>
+        </form>
+        <div class="board-note hidden" id="board-note" role="status" aria-live="polite"></div>
       </div>
 
       <!-- Vehicle Picker for next run -->
       <div class="challan-v-picker">
         <span class="challan-v-title">SELECT RIDE FOR NEXT RUN [PRESS 1, 2, OR 3]:</span>
         <div class="v-buttons" id="challan-v-selector">
-          <button class="v-btn active" data-v="auto">🛺 AUTO (+8s Cutting Chai) [1]</button>
-          <button class="v-btn" data-v="car">🚗 SWIFT (+5s Sting Red) [2]</button>
-          <button class="v-btn" data-v="truck">🚛 TRUCK (+10s Kesari Vimal) [3]</button>
+          <button class="v-btn active" data-v="auto">🛺 AUTO [1]</button>
+          <button class="v-btn" data-v="car">🚗 SWIFT [2]</button>
+          <button class="v-btn" data-v="truck">🚛 TRUCK [3]</button>
         </div>
       </div>
 
+      <button class="board-btn board-btn-light js-open-board" type="button">🏆 VIEW LEADERBOARD [L]</button>
       <button class="restart-btn" id="restart-btn">DRIVE AGAIN [ENTER / SPACE]</button>
       <div class="countdown-hint">Auto-reset in <span id="auto-reset-timer">12</span>s for next player</div>
     </div>
@@ -279,7 +295,31 @@
           <button class="resume-btn" id="resume-btn">RESUME HIGHWAY [P / ESC / ENTER]</button>
           <button class="restart-pause-btn" id="restart-pause-btn">RESTART RUN [R]</button>
         </div>
+        <button class="board-btn js-open-board" type="button">🏆 LEADERBOARD [L]</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Leaderboard: top drivers on this machine, overall and per ride -->
+  <div id="leaderboard-overlay" class="overlay-screen hidden" role="dialog" aria-modal="true" aria-label="Leaderboard">
+    <div class="board-card">
+      <div class="board-header">
+        <span class="board-kicker">NH-44 &bull; TOP DRIVERS</span>
+        <h2>LEADERBOARD</h2>
+      </div>
+      <div class="board-tabs" id="board-tabs">
+        <button type="button" class="board-tab active" data-filter="all">ALL RIDES</button>
+        <button type="button" class="board-tab" data-filter="auto">🛺 AUTO</button>
+        <button type="button" class="board-tab" data-filter="car">🚗 SWIFT</button>
+        <button type="button" class="board-tab" data-filter="truck">🚛 TRUCK</button>
+      </div>
+      <ol class="board-list" id="board-list"></ol>
+      <div class="board-empty hidden" id="board-empty">No scores yet. Be the first on the board!</div>
+      <div class="board-actions">
+        <button type="button" class="board-clear" id="board-clear">CLEAR BOARD</button>
+        <button type="button" class="board-close" id="board-close">CLOSE [ESC / L]</button>
+      </div>
+      <p class="board-hint">&larr; &rarr; switch ride &bull; scores are saved on this computer</p>
     </div>
   </div>
 
@@ -289,11 +329,13 @@
   </div>
 
   <!-- Game Scripts (Cache-busted) -->
-  <script src="js/audio.js?v=2.3"></script>
-  <script src="js/vehicles.js?v=2.3"></script>
-  <script src="js/scenery.js?v=2.3"></script>
-  <script src="js/road.js?v=2.3"></script>
-  <script src="js/physics.js?v=2.3"></script>
-  <script src="js/main.js?v=2.3"></script>
+  <script src="js/progress.js?v=4.2"></script>
+  <script src="js/audio.js?v=4.2"></script>
+  <script src="js/detail.js?v=4.2"></script>
+  <script src="js/vehicles.js?v=4.2"></script>
+  <script src="js/scenery.js?v=4.2"></script>
+  <script src="js/road.js?v=4.2"></script>
+  <script src="js/physics.js?v=4.2"></script>
+  <script src="js/main.js?v=4.2"></script>
 </body>
 </html>

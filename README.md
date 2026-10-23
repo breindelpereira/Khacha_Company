@@ -78,8 +78,11 @@ npx serve .
    * Honking sends a visible shockwave; panic-swerves autos and slow trucks into outer lanes.
 3. **Attract Mode (Screensaver):**
    * Automatically enters autopilot cruise with a cinematic orbiting camera when idle.
-4. **90-Second Event Rush:**
-   * High-intensity time-attack format with clutch power-up extensions.
+4. **40-Second Event Rush:**
+   * High-intensity time-attack format with clutch power-up extensions. Traffic thickens and drivers get pushier every 250 m, and time bonuses shrink.
+   * Per-ride personal bests and your last-used ride are remembered in the browser.
+7. **Leaderboard:**
+   * Runs that reach the top 10 (overall or for their ride) ask for a name on the E-Challan. Press `L` on the start, pause or challan screen (or use the button) to open the board, `←` `→` to switch between All Rides, Auto, Swift and Truck, `Esc` to close. Scores are stored in the browser on that computer; "Clear board" needs a second click to confirm.
 5. **E-Challan / Trip Receipt:**
    * Detailed performance scorecard at the end of each run with local high-score tracking.
 6. **Cultural Authenticity:**

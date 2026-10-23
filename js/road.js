@@ -27,6 +27,8 @@ class RoadManager {
 
     // Procedural curve parameters (Smooth winding highway like Slow Roads)
     this.curveSeed = Math.random() * 1000;
+
+    window.detailBuilder.applyBiomeMaterials(this);
   }
 
   // Get Biome based on distance along NH-44 (Z position) - Ultra-Fast 40s Sprint Progression
@@ -81,9 +83,15 @@ class RoadManager {
   }
 
   // Clear existing chunks and rebuild fresh road from startZ
+  // Free GPU buffers of a removed chunk (materials and textures are shared, so they stay)
+  disposeChunk(chunk) {
+    this.scene.remove(chunk);
+    chunk.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+
   reset(startZ = 0) {
     this.chunks.forEach(chunk => {
-      this.scene.remove(chunk);
+      this.disposeChunk(chunk);
     });
     this.chunks = [];
     this.init(startZ);
@@ -182,6 +190,10 @@ class RoadManager {
 
     // Terrain mesh
     terrainGeo.setAttribute('position', new THREE.Float32BufferAttribute(terrVerts, 3));
+    // World-space UVs so the ground texture tiles seamlessly across chunks (36 m per tile)
+    const terrUVs = [];
+    for (let v = 0; v < terrVerts.length; v += 3) terrUVs.push(terrVerts[v] / 36, terrVerts[v + 2] / 36);
+    terrainGeo.setAttribute('uv', new THREE.Float32BufferAttribute(terrUVs, 2));
     terrainGeo.computeVertexNormals();
     terrainGeo.setIndex(terrIndices);
     const terrMesh = new THREE.Mesh(terrainGeo, terrMat);
@@ -193,6 +205,9 @@ class RoadManager {
 
     // Populate Scenery on this chunk
     const sceneryItems = this.populateChunkScenery(group, zPos);
+
+    // Non-interactive dressing: instanced roadside furniture, vegetation, fields, structures
+    window.detailBuilder.dressChunk(this, group, zPos, biome);
 
     group.userData = {
       zPos: zPos,
@@ -213,13 +228,19 @@ class RoadManager {
       indices.push(row + 1, row + 3, row + 2);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    const uvs = [];
+    for (let v = 0; v < verts.length; v += 3) uvs.push(verts[v] / 5, verts[v + 2] / 5);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.computeVertexNormals();
     geo.setIndex(indices);
-    return new THREE.Mesh(geo, material);
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.receiveShadow = true;
+    return mesh;
   }
 
   // Add painted lines and central divider
   addRoadMarkings(group, zPos, segments, dz) {
+    const marks = new THREE.Group(); // baked into one mesh per material at the end
     // 4 Lanes: Lane dividers at -4m and +4m from center
     const laneXOffsets = [-4.0, 4.0];
     const hw = this.roadWidth * 0.5;
@@ -237,7 +258,7 @@ class RoadManager {
         const dash = new THREE.Mesh(dashGeo, this.matWhiteLine);
         dash.position.set(x + laneX, y, z);
         dash.rotation.y = angle;
-        group.add(dash);
+        marks.add(dash);
       });
 
       // Yellow road edge solid lines
@@ -247,17 +268,24 @@ class RoadManager {
         const edge = new THREE.Mesh(edgeGeo, this.matYellowLine);
         edge.position.set(x + edgeX, y, z - dz * 0.5);
         edge.rotation.y = angle;
-        group.add(edge);
+        marks.add(edge);
       });
     }
 
-    // Concrete median divider in the center
-    const medianGeo = new THREE.BoxGeometry(0.8, 0.4, this.chunkLength);
-    const median = new THREE.Mesh(medianGeo, this.matMedian);
-    const midZ = zPos - this.chunkLength * 0.5;
-    median.position.set(this.getRoadCurve(midZ), this.getRoadElevation(midZ) + 0.2, midZ);
-    median.rotation.y = this.getRoadAngle(midZ);
-    group.add(median);
+    // All four lanes carry traffic the same way, so the centre is a flat painted
+    // dashed line (not a solid divider) and vehicles can move across it freely.
+    for (let i = 0; i < segments; i += 2) {
+      const z = zPos - i * dz;
+      const centreGeo = new THREE.PlaneGeometry(0.2, 3.5);
+      centreGeo.rotateX(-Math.PI / 2);
+      const centre = new THREE.Mesh(centreGeo, this.matWhiteLine);
+      centre.position.set(this.getRoadCurve(z), this.getRoadElevation(z) + 0.02, z);
+      centre.rotation.y = this.getRoadAngle(z);
+      marks.add(centre);
+    }
+
+    window.detailBuilder.bakeByMaterial(marks);
+    group.add(marks);
   }
 
   // Populate Indian scenery, hazards, and biome architecture along this chunk
@@ -274,7 +302,7 @@ class RoadManager {
     // 4 Lanes: 2 Green Open Lanes (grant +1500 PTS) vs 2 Closed Red Boom Barriers
     // =========================================================================
     if (Math.abs(zPos - (-300)) < this.chunkLength * 0.5 || Math.abs(zPos - (-900)) < this.chunkLength * 0.5) {
-      const toll = window.sceneryBuilder.createTollPlaza({ openLanes: [-1.8, 1.8] });
+      const toll = window.sceneryBuilder.createTollPlaza({ openLanes: window.Progress.pickOpenTollLanes() });
       toll.position.set(xCenter, yCenter, chunkMidZ);
       toll.rotation.y = angle;
       group.add(toll);
@@ -470,7 +498,7 @@ class RoadManager {
       const chunk = this.chunks[i];
       // If chunk is 100m behind player, recycle it ahead
       if (chunk.userData.zPos > playerZ + 100) {
-        this.scene.remove(chunk);
+        this.disposeChunk(chunk);
         this.chunks.splice(i, 1);
 
         // Find furthest chunk ahead

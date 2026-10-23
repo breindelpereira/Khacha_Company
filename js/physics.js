@@ -5,9 +5,9 @@ class TrafficManager {
     this.scene = scene;
     this.road = roadManager;
     this.vehicles = [];
-    this.maxTraffic = 16; // Vibrant AI highway traffic
-    this.laneWidth = 3.6;
-    // 4 Lanes: Left-Slow (-5.4m), Left-Fast (-1.8m), Right-Fast (+1.8m), Right-Slow (+5.4m)
+    this.difficulty = window.Progress.difficultyForDistance(0);
+    this.maxTraffic = this.difficulty.trafficCount; // Grows with distance
+    this.laneWidth = 3.6;    // 4 Lanes: Left-Slow (-5.4m), Left-Fast (-1.8m), Right-Fast (+1.8m), Right-Slow (+5.4m)
     this.lanes = [-5.4, -1.8, 1.8, 5.4];
 
     // Player State
@@ -85,6 +85,8 @@ class TrafficManager {
     this.score = 0;
     this.topSpeedKmh = 0;
     this.currentGear = 1;
+    this.difficulty = window.Progress.difficultyForDistance(0);
+    this.maxTraffic = this.difficulty.trafficCount;
 
     // Clear and respawn fresh AI traffic at least 60m ahead
     this.initTraffic(startZ);
@@ -289,7 +291,7 @@ class TrafficManager {
   // Trigger Desi Horn and push AI traffic to yield
   triggerHorn() {
     this.hornCount++;
-    window.soundEngine.playHorn();
+    window.soundEngine.startHorn(this.vehicleType); // sustained until the key is released
 
     // Trigger visual shockwave
     if (this.player) {
@@ -402,11 +404,13 @@ class TrafficManager {
     window.soundEngine.updateEngine(speedKmh, throttle, this.currentGear);
 
     // Lateral Steering Physics (speed-dependent sensitivity)
-    const steerFactor = Math.min(this.playerSpeed / 12, 1.0); // Don't steer when stationary
+    const h = window.Progress.HANDLING[this.vehicleType] || window.Progress.HANDLING.auto;
+    const steerFactor = Math.min(this.playerSpeed / h.fullLockSpeed, 1.0); // Don't steer when stationary
+    const speedLoss = 1 - h.highSpeedLoss * (this.playerSpeed / this.playerMaxSpeed); // heavy rigs wash out at speed
     this.playerLateralSpeed = THREE.MathUtils.lerp(
       this.playerLateralSpeed,
-      steer * 9.5 * steerFactor,
-      delta * 12
+      steer * h.maxLateral * steerFactor * speedLoss,
+      Math.min(delta * h.response, 1)
     );
     this.playerLateralOffset += this.playerLateralSpeed * delta;
 
@@ -428,9 +432,9 @@ class TrafficManager {
     this.player.position.y = roadY;
 
     // Realistic vehicle lean (roll angle) on hard turns
-    const targetRoll = -this.playerLateralSpeed * 0.04;
+    const targetRoll = -this.playerLateralSpeed * h.roll;
     this.playerRoll = THREE.MathUtils.lerp(this.playerRoll, targetRoll, delta * 10);
-    this.player.rotation.set(0, roadAngle + (-this.playerLateralSpeed * 0.03), this.playerRoll);
+    this.player.rotation.set(0, roadAngle + (-this.playerLateralSpeed * h.yaw), this.playerRoll);
 
     // Rotate player wheels
     if (this.player.userData.wheels) {
@@ -450,6 +454,7 @@ class TrafficManager {
     // 2. Update AI Traffic
     let collisionOccurred = false;
     let nearMissOccurred = false;
+    let nearMissPoints = 0;
     let overtakeOccurred = false;
     const playerZ = this.player.position.z;
     const playerX = this.player.position.x;
@@ -493,6 +498,15 @@ class TrafficManager {
           });
         }
       });
+    }
+
+    // Difficulty ramp: add traffic ahead as the run progresses
+    if (!isAutopilot) {
+      this.difficulty = window.Progress.difficultyForDistance(this.distanceCovered);
+      this.maxTraffic = this.difficulty.trafficCount;
+      while (this.vehicles.length < this.maxTraffic) {
+        this.spawnAIVehicle(playerZ - 180 - Math.random() * 80);
+      }
     }
 
     this.vehicles.forEach(v => {
@@ -652,7 +666,7 @@ class TrafficManager {
       if (!isAutopilot && distAheadOfPlayer > 14 && distAheadOfPlayer < 55 && this.playerSpeed > (v.speedUnits + 3.0) && !hazardAhead) {
         v.messCooldown -= delta;
         if (v.messCooldown <= 0 && !v.isYielding) {
-          v.messCooldown = 5.0 + Math.random() * 7.0;
+          v.messCooldown = (5.0 + Math.random() * 7.0) * this.difficulty.messScale;
 
           const latDistanceToPlayer = Math.abs(v.laneOffset - this.playerLateralOffset);
           const roll = Math.random();
@@ -750,7 +764,8 @@ class TrafficManager {
         nearMissOccurred = true;
         this.nearMissCount++;
         this.flowStreak = Math.min(this.flowStreak + 1, 5);
-        this.score += 250 * this.flowStreak;
+        nearMissPoints = 250 * this.flowStreak;
+        this.score += nearMissPoints;
         window.soundEngine.playNearMiss();
       }
 
@@ -771,8 +786,7 @@ class TrafficManager {
         v.mesh.position.z = playerZ - 180 - Math.random() * 80;
         const newLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
         v.laneOffset = newLane;
-        v.targetLaneOffset = newLane;
-        v.speedUnits = v.baseSpeedUnits;
+        v.targetLaneOffset = newLane;        v.speedUnits = v.baseSpeedUnits;
         v.targetSpeedUnits = v.baseSpeedUnits;
         v.laneChangeTimer = 2.0 + Math.random() * 4.0;
         v.messCooldown = 3.5 + Math.random() * 6.0;
@@ -873,10 +887,12 @@ class TrafficManager {
     return {
       crashed: collisionOccurred,
       nearMiss: nearMissOccurred,
+      nearMissPoints: nearMissPoints,
       chaiPickup: pickedUpChai,
       fastagCleared: fastagPassed,
       overtake: overtakeOccurred,
-      chaiTimeBonus: this.chaiTimeBonus || 8,
+      chaiTimeBonus: window.Progress.scaledChaiBonus(this.chaiTimeBonus || 8, this.difficulty),
+      difficultyLevel: this.difficulty.level,
       speedKmh: speedKmh,
       distanceKm: (this.distanceCovered / 1000).toFixed(1),
       score: this.score,

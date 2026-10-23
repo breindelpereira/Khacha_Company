@@ -1095,3 +1095,370 @@ body, html {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Progression: personal-best badge on the challan */
+.new-best-badge {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #92400e;
+  margin-top: 4px;
+}
+.new-best-badge.hidden { display: none; }
+
+/* ========================================================
+   HIGHWAY SIGNAGE SKIN
+   Same amber/sunset theme, but built like real NH-44 furniture instead of
+   glass cards: taxi-plate yellow, highway-sign green, truck-art lettering,
+   hard offset shadows, solid panels (no blur, no glow).
+   ======================================================== */
+:root {
+  --asphalt: #15171d;
+  --asphalt-2: #1f232c;
+  --plate: #f7c531;
+  --plate-deep: #a87400;
+  --board: #0e6b3b;
+  --paper: #f3ead3;
+  --paper-line: #c9bb94;
+  --stamp: #b3261e;
+  --sting: #d6122f;
+  --hard: 0 4px 0 rgba(0, 0, 0, 0.55);
+}
+
+.hud-card, .speedo-container, .biome-pill, .vehicle-toast, .flow-toast,
+.audio-banner, .horn-indicator, .vehicle-picker-box, .pause-card, .feat-tag {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ---- HUD: signs and plates ---- */
+.hud-card {
+  background: var(--asphalt);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  box-shadow: var(--hard);
+}
+.hud-card .label { color: #cbd5e1; letter-spacing: 2.5px; }
+.hud-card .value small { color: var(--plate); }
+
+/* Distance reads like a green highway board */
+.distance-card { background: var(--board); border-color: #fff; }
+.distance-card .label { color: #d1fae5; }
+.distance-card .value small { color: #fff; }
+
+/* Timer and score read like number plates */
+.timer-card, .score-card { background: var(--plate); border-color: #111; }
+.timer-card .label, .score-card .label { color: #3b2a00; }
+.timer-card .value, .score-card .value { color: #111 !important; }
+.timer-card .value small { color: #3b2a00; }
+.timer-bar-container { background: rgba(0, 0, 0, 0.25); border-radius: 0; height: 7px; }
+.timer-bar { background: #111; }
+
+.pause-btn-card { background: var(--asphalt); border-radius: 6px; }
+.pause-btn-card:hover { background: var(--plate); border-color: #111; box-shadow: var(--hard); }
+.pause-btn-card:hover .pause-icon, .pause-btn-card:hover .pause-label { color: #111; }
+
+.audio-toggle { border-radius: 4px; background: var(--asphalt); border: 2px solid rgba(255, 255, 255, 0.6); letter-spacing: 1px; text-transform: uppercase; }
+.audio-toggle[aria-pressed="true"] { background: var(--stamp); border-color: #fff; color: #fff; }
+
+.biome-pill { background: var(--asphalt); border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.5); box-shadow: none; opacity: 0.9; }
+.biome-pill.highlight { color: var(--plate); border-color: var(--plate); box-shadow: none; }
+
+/* Speedometer: instrument cluster */
+.speedo-container { background: var(--asphalt); border: 2px solid rgba(255, 255, 255, 0.85); border-radius: 10px; box-shadow: var(--hard); }
+.streak-pill { border-radius: 3px; background: var(--plate); color: #111; border: 2px solid #111; letter-spacing: 2px; }
+.gear-badge { border-radius: 3px; background: transparent; color: #7ee2a8; border: 1px solid #7ee2a8; }
+
+.horn-indicator { background: var(--asphalt); border: 2px solid var(--plate); border-radius: 6px; box-shadow: var(--hard); }
+.horn-indicator.active { background: var(--plate); box-shadow: var(--hard); transform: translateY(2px); }
+.horn-indicator.active .horn-title, .horn-indicator.active .horn-key { color: #111; }
+.control-hints { color: #e2e8f0; font-weight: 600; letter-spacing: 0.5px; }
+
+/* ---- Toasts ---- */
+.flow-toast { background: var(--asphalt); border: 3px solid var(--plate); border-radius: 4px; box-shadow: var(--hard); }
+.flow-badge { color: var(--plate); }
+.vehicle-toast { background: var(--plate); color: #111; border: 3px solid #111; border-radius: 4px; box-shadow: var(--hard); }
+.chai-toast { background: var(--sting); border: 3px solid #fff; border-radius: 6px; box-shadow: var(--hard); }
+.chai-emoji { filter: none; }
+.fastag-toast { background: var(--board); border: 3px solid #fff; border-radius: 6px; box-shadow: var(--hard); }
+.fastag-logo-box { border-radius: 3px; box-shadow: none; }
+.audio-banner { background: var(--asphalt); border: 2px solid var(--plate); border-radius: 4px; }
+
+/* ---- Attract screen ---- */
+.attract-content { background: linear-gradient(180deg, rgba(10, 8, 20, 0.15), rgba(10, 8, 20, 0.62) 55%, rgba(10, 8, 20, 0.15)); }
+.title-badge {
+  border-radius: 0;
+  background: var(--plate);
+  color: #111;
+  border: 2px solid #111;
+  letter-spacing: 3px;
+  padding: 3px 14px;
+}
+.game-title {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: #fff6dc;
+  filter: none;
+  letter-spacing: 5px;
+  text-shadow: 3px 3px 0 #d9480f, 6px 6px 0 rgba(0, 0, 0, 0.55);
+}
+.game-subtitle { color: #e7d9b6; font-size: 15px; letter-spacing: 5px; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); }
+
+/* Feature list becomes one plain highway-sign line instead of pill chips */
+.attract-features { gap: 4px 0; margin-bottom: 28px; }
+.feat-tag {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 2px 12px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #f1e7cc;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
+}
+.feat-tag + .feat-tag { border-left: 2px solid rgba(247, 197, 49, 0.7); }
+
+.vehicle-picker-box { background: var(--asphalt); border: 2px solid rgba(255, 255, 255, 0.85); border-radius: 8px; box-shadow: var(--hard); }
+.v-picker-title { color: var(--plate); }
+.v-btn { background: var(--asphalt-2); border: 2px solid rgba(255, 255, 255, 0.35); border-radius: 6px; }
+.v-btn:hover { background: #2b303b; border-color: var(--plate); transform: none; }
+.v-btn.active { background: var(--plate); color: #111; border-color: #111; box-shadow: var(--hard); transform: none; }
+.v-btn.active .v-spec { color: #3b2a00; }
+
+.pulse-button {
+  background: var(--plate);
+  color: #111;
+  border: 3px solid #111;
+  border-radius: 6px;
+  letter-spacing: 2.5px;
+  box-shadow: 0 5px 0 var(--plate-deep), 0 8px 0 rgba(0, 0, 0, 0.5);
+  animation: platePress 1.4s ease-in-out infinite alternate;
+}
+.pulse-button:hover { transform: none; background: #ffd24d; }
+@keyframes platePress {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(2px); box-shadow: 0 3px 0 var(--plate-deep), 0 6px 0 rgba(0, 0, 0, 0.5); }
+}
+.controller-hint { color: #e7d9b6; }
+
+/* ---- E-Challan: cream paper receipt ---- */
+.challan-card {
+  background: var(--paper);
+  color: #1c1a14;
+  border: 2px solid #1c1a14;
+  border-radius: 4px;
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.55);
+  background-image: repeating-linear-gradient(0deg, transparent 0 27px, rgba(0, 0, 0, 0.035) 27px 28px);
+}
+.challan-header { border-bottom: 2px dashed #1c1a14; padding-bottom: 14px; }
+.challan-header h2 { color: #1c1a14; letter-spacing: 2px; }
+.challan-header .sub { color: #5c5238; }
+.challan-body { gap: 0; }
+.challan-row { color: #3b3524; padding: 7px 0; border-bottom: 1px dotted var(--paper-line); font-weight: 700; letter-spacing: 0.5px; }
+.challan-row strong { color: #1c1a14; font-family: 'Teko', sans-serif; font-size: 22px; line-height: 1; letter-spacing: 1px; }
+.challan-divider { display: none; }
+.challan-row.total-score { border-bottom: 2px solid #1c1a14; }
+.score-highlight { color: #1c1a14; font-size: 46px; }
+.challan-row.best-score strong { color: #0e6b3b; }
+.driver-rank-box {
+  background: transparent;
+  border: 3px solid var(--stamp);
+  border-radius: 4px;
+  color: var(--stamp);
+  transform: rotate(-1.5deg);
+  margin-top: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.new-best-badge { background: var(--plate); border: 2px solid #111; border-radius: 3px; color: #111; margin-top: 12px; }
+.challan-v-picker { background: rgba(0, 0, 0, 0.05); border: 1px dashed #1c1a14; border-radius: 4px; }
+.challan-v-title { color: #5c5238; }
+.challan-v-picker .v-btn { background: #e6dab8; color: #1c1a14; border: 2px solid #1c1a14; }
+.challan-v-picker .v-btn.active { background: var(--plate); color: #111; }
+.restart-btn { background: #1c1a14; border: 2px solid #1c1a14; border-radius: 4px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45); letter-spacing: 2px; }
+.restart-btn:hover { background: var(--plate); color: #111; transform: none; }
+.countdown-hint { color: #5c5238; }
+
+/* ---- Pause: roadwork board with hazard stripe ---- */
+.pause-card {
+  background: var(--asphalt);
+  border: 3px solid var(--plate);
+  border-radius: 8px;
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.55);
+  position: relative;
+  padding-top: 46px;
+}
+.pause-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 14px;
+  border-radius: 4px 4px 0 0;
+  background: repeating-linear-gradient(-45deg, var(--plate) 0 14px, #111 14px 28px);
+}
+.pause-header .pause-badge { border-radius: 0; background: var(--plate); color: #111; border: none; }
+.pause-v-section { border-radius: 6px; background: var(--asphalt-2); border-color: rgba(255, 255, 255, 0.2); }
+.pause-section-title { color: var(--plate); }
+.resume-btn { background: var(--board); border: 2px solid #fff; border-radius: 6px; box-shadow: var(--hard); }
+.resume-btn:hover { background: #128a4d; box-shadow: var(--hard); transform: none; }
+.restart-pause-btn { background: transparent; border: 2px solid var(--stamp); color: #fca5a5; border-radius: 6px; }
+.restart-pause-btn:hover { background: var(--stamp); color: #fff; transform: none; }
+
+@media (max-width: 760px) {
+  .feat-tag + .feat-tag { border-left: none; }
+  .game-subtitle { font-size: 11px; letter-spacing: 3px; }
+}
+
+.flow-toast, .vehicle-toast, .chai-toast, .fastag-toast { width: max-content; max-width: calc(100vw - 32px); text-align: center; }
+.fastag-title { font-size: 24px; }
+.challan-card { width: min(440px, 100%); padding: 28px 24px; }
+.challan-header h2 { font-size: clamp(24px, 7vw, 34px); }
+.challan-card, .pause-card { margin: auto; }
+
+/* ========================================================
+   LEADERBOARD: a green NH-44 highway board
+   ======================================================== */
+#leaderboard-overlay { z-index: 40; background: rgba(8, 10, 16, 0.72); }
+
+.board-card {
+  width: min(560px, 100%);
+  margin: auto;
+  padding: 24px 24px 18px;
+  background: var(--board);
+  color: #fff;
+  border: 4px solid #fff;
+  border-radius: 10px;
+  box-shadow: 0 0 0 4px var(--board), 10px 10px 0 rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: all;
+  animation: cardPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.board-header { text-align: center; }
+.board-kicker { display: block; font-size: 11px; font-weight: 800; letter-spacing: 3px; color: var(--plate); }
+.board-header h2 {
+  font-family: 'Teko', sans-serif;
+  font-size: 52px;
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: 4px;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+.board-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.board-tab {
+  font: 800 12px/1 'Outfit', sans-serif;
+  letter-spacing: 1px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.board-tab:hover { background: rgba(0, 0, 0, 0.4); }
+.board-tab.active { background: var(--plate); color: #111; border-color: #111; }
+.board-tab:focus-visible, .board-close:focus-visible, .board-clear:focus-visible, .board-btn:focus-visible { outline: 3px solid var(--plate); outline-offset: 2px; }
+
+.board-list { list-style: none; display: flex; flex-direction: column; border-top: 2px solid rgba(255, 255, 255, 0.7); }
+.board-row {
+  display: grid;
+  grid-template-columns: 38px 1fr 34px 86px 92px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.35);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.board-rank {
+  font-family: 'Teko', sans-serif;
+  font-size: 26px;
+  line-height: 1;
+  color: #111;
+  background: var(--plate);
+  border-radius: 3px;
+  text-align: center;
+  padding: 2px 0;
+}
+.board-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.board-ride { text-align: center; font-size: 18px; }
+.board-dist { font-size: 12px; color: #d1fae5; text-align: right; }
+.board-score { font-family: 'Teko', sans-serif; font-size: 28px; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.board-row:nth-child(-n+3) .board-name, .board-row:nth-child(-n+3) .board-score { color: #fde68a; }
+.board-row.mine { background: rgba(247, 197, 49, 0.28); outline: 2px solid var(--plate); outline-offset: -2px; }
+
+.board-empty { text-align: center; padding: 26px 8px; font-weight: 700; letter-spacing: 1px; color: #d1fae5; }
+.board-empty.hidden, .name-entry.hidden, .board-note.hidden { display: none; }
+
+.board-actions { display: flex; gap: 10px; justify-content: space-between; }
+.board-close, .board-clear {
+  font: 800 13px/1 'Outfit', sans-serif;
+  letter-spacing: 1.5px;
+  border-radius: 6px;
+  padding: 13px 16px;
+  cursor: pointer;
+}
+.board-close { flex: 1; background: var(--plate); color: #111; border: 3px solid #111; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5); }
+.board-clear { background: transparent; color: #fecaca; border: 2px solid rgba(254, 202, 202, 0.7); }
+.board-clear.armed { background: var(--stamp); color: #fff; border-color: #fff; }
+.board-hint { text-align: center; font-size: 11px; letter-spacing: 1px; color: #d1fae5; }
+
+/* Entry points on the other screens */
+.board-btn {
+  font: 800 13px/1 'Outfit', sans-serif;
+  letter-spacing: 1.5px;
+  color: #fff;
+  background: var(--board);
+  border: 2px solid #fff;
+  border-radius: 6px;
+  padding: 12px 18px;
+  margin-top: 10px;
+  cursor: pointer;
+  pointer-events: all;
+  box-shadow: var(--hard);
+}
+.board-btn:hover { background: #128a4d; }
+.board-btn-light { background: transparent; color: var(--board); border-color: var(--board); box-shadow: none; margin: 0 0 10px; }
+.board-btn-light:hover { background: rgba(14, 107, 59, 0.1); }
+.pause-body .board-btn { margin-top: 0; }
+
+/* Name entry on the E-Challan */
+.name-entry { margin-top: 12px; padding: 12px; background: var(--plate); border: 2px solid #111; border-radius: 4px; display: flex; flex-direction: column; gap: 8px; }
+.name-entry label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; color: #111; text-align: center; }
+.name-row { display: flex; gap: 8px; }
+.name-row input {
+  flex: 1;
+  min-width: 0;
+  font: 700 20px/1 'Teko', sans-serif;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  color: #111;
+  background: #fff;
+  border: 2px solid #111;
+  border-radius: 3px;
+  padding: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.name-row input:focus { outline: 3px solid #111; outline-offset: 1px; }
+.name-row button { font: 800 13px/1 'Outfit', sans-serif; letter-spacing: 1.5px; color: #fff; background: #111; border: 2px solid #111; border-radius: 3px; padding: 0 16px; cursor: pointer; }
+.board-note { margin-top: 10px; text-align: center; font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--board); }
+
+@media (max-width: 520px) {
+  .board-row { grid-template-columns: 34px 1fr 28px 78px; }
+  .board-dist { display: none; }
+  .board-header h2 { font-size: 42px; }
+}
+
+/* A hidden overlay must not catch clicks through its (invisible) cards */
+.overlay-screen.hidden, .overlay-screen.hidden * { pointer-events: none !important; }

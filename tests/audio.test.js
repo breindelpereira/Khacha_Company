@@ -97,3 +97,46 @@ test('reset prevents an in-flight decode from becoming stale speech', async () =
   assert.equal(await pending, false);
   assert.equal(nodes.filter(node => node.started && node.buffer).length, 0);
 });
+
+test('each ride has a different horn voice', () => {
+  const { engine } = audio();
+  const { car, auto, truck } = engine.hornProfiles;
+  assert.deepEqual([car.kind, auto.kind, truck.kind], ['electric', 'bulb', 'air']);
+  assert.equal(car.tones.length, 2);
+  assert.equal(truck.tones.length, 3);
+  assert.ok(Math.max(...truck.tones) < Math.min(...car.tones), 'air horn sits below the electric horn');
+  assert.ok(truck.level > car.level && car.level > auto.level);
+});
+
+test('electric and air horns sustain until released, bulb horn is a fixed phrase', () => {
+  ['car', 'truck'].forEach(type => {
+    const { engine, nodes } = audio();
+    assert.equal(engine.startHorn(type), true);
+    assert.equal(engine.startHorn(type), false, 'no second voice while held');
+    const oscillators = engine.hornVoice.oscs;
+    assert.ok(oscillators.length >= 5);
+    assert.ok(oscillators.every(o => o.started && !o.stopped));
+    engine.stopHorn();
+    assert.equal(engine.hornVoice, null);
+    assert.ok(oscillators.every(o => o.stopped));
+    assert.equal(engine.startHorn(type), true, 'can honk again after release');
+    void nodes;
+  });
+
+  const { engine, nodes } = audio();
+  assert.equal(engine.startHorn('auto'), true);
+  const started = nodes.filter(n => n.started).length;
+  assert.ok(started >= 4, 'two squeezes, each a reed plus buzz');
+  engine.stopHorn();
+  assert.ok(engine.hornVoice, 'releasing the key does not cut the bulb phrase short');
+});
+
+test('a quick tap still produces a full honk and muting or pausing silences a held horn', () => {
+  const { engine } = audio();
+  engine.playHorn('truck');
+  assert.equal(engine.hornVoice, null);
+  engine.startHorn('car');
+  const held = engine.hornVoice.oscs;
+  engine.stopReward();
+  assert.ok(held.every(o => o.stopped));
+});
