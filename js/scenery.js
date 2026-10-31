@@ -1173,6 +1173,106 @@ class SceneryBuilder {
     return group;
   }
 
+  // ROUTE CHOICE GANTRY: one painted deal sign above each of the 4 lanes
+  createRouteSignTexture(option) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 192;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = option.color;
+    ctx.fillRect(0, 0, 256, 192);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(6, 6, 244, 180);
+    ctx.textAlign = 'center';
+    ctx.font = '64px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    ctx.fillText(option.icon, 128, 76);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 40px Impact, Arial Black, sans-serif';
+    ctx.fillText(option.title, 128, 132);
+    ctx.fillStyle = '#fef9c3';
+    ctx.font = 'bold 22px Arial, sans-serif';
+    ctx.fillText(option.sub, 128, 168);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  createRouteGantry(options, lanes) {
+    const group = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3, metalness: 0.8 });
+
+    // Header beam: "CHOOSE YOUR ROUTE"
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, 1024, 96);
+    for (let x = 0; x < 1024; x += 48) {
+      ctx.fillStyle = (x / 48) % 2 === 0 ? '#facc15' : '#111827';
+      ctx.fillRect(x, 0, 48, 10);
+      ctx.fillRect(x + 24, 86, 24, 10);
+    }
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 50px Impact, Arial Black, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔀 CHOOSE YOUR ROUTE • STAY IN LANE', 512, 68);
+    const header = new THREE.Mesh(
+      new THREE.PlaneGeometry(16, 1.5),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), side: THREE.DoubleSide })
+    );
+    header.position.set(0, 9.3, 0);
+    group.add(header);
+
+    // One sign per lane
+    const signGeo = new THREE.PlaneGeometry(3.3, 2.5);
+    options.forEach((opt, i) => {
+      const sign = new THREE.Mesh(signGeo, new THREE.MeshBasicMaterial({ map: this.createRouteSignTexture(opt) }));
+      sign.position.set(lanes[i], 7.2, 0.05);
+      group.add(sign);
+      // Arrow pointing down into the lane
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      arrow.rotation.x = Math.PI;
+      arrow.position.set(lanes[i], 5.6, 0.1);
+      group.add(arrow);
+    });
+
+    // Truss beam & columns
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.35, 0.35), steel);
+    beam.position.set(0, 8.5, -0.25);
+    group.add(beam);
+    const colGeo = new THREE.CylinderGeometry(0.22, 0.26, 10, 12);
+    const colL = new THREE.Mesh(colGeo, steel);
+    colL.position.set(-9.3, 5, 0);
+    const colR = colL.clone();
+    colR.position.x = 9.3;
+    group.add(colL, colR);
+
+    // Painted gate line across the road
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(14.4, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(0, 0.03, 0);
+    group.add(line);
+
+    return group;
+  }
+
+  // Flexible lane-divider bollard (orange with reflective band)
+  createBollard() {
+    if (!this._bollardGeo) {
+      this._bollardGeo = new THREE.CylinderGeometry(0.09, 0.12, 0.9, 8);
+      this._bollardMat = new THREE.MeshLambertMaterial({ color: 0xf97316 });
+      this._bandGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.12, 8);
+      this._bandMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+    }
+    const g = new THREE.Group();
+    const post = new THREE.Mesh(this._bollardGeo, this._bollardMat);
+    post.position.y = 0.45;
+    const band = new THREE.Mesh(this._bandGeo, this._bandMat);
+    band.position.y = 0.72;
+    g.add(post, band);
+    return g;
+  }
+
   // 17. URBAN IT PARK TOWERS & ILLUMINATED CITY BUILDINGS
   createUrbanBuilding(side = 1, height = 36) {
     const group = new THREE.Group();

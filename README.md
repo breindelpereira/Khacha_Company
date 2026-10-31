@@ -55,6 +55,7 @@ npx serve .
 - **Near-misses build your Flow Streak** (up to **x8**). Every near-miss multiplies its points by the streak, but you have **4.5 seconds** to chain the next one before the combo drops. Watch the bar under the streak pill.
 - **Chain a x4+ near-miss** for a split-second **slow-mo** moment.
 - **Khacha Meter** fills from near-misses, overtakes, power-ups, FASTag lanes and **slipstreaming** (tuck in right behind a vehicle for a small speed tow). When it glows, hit `Shift` for **KHACHA NITRO**: +45% top speed, and you **smash traffic and barricades out of the way** for bonus points instead of crashing. Toll booth pillars will still stop you.
+- **🔀 Route Choice junctions** (first at 540 m, then every 480 m): a gantry signs a different deal over each of the 4 lanes, such as **+6 sec**, **full nitro**, **2x score for 15s**, **rush hour** (packed traffic, 3x near-miss points), **open road**, **+2500**, or a **❓ mystery** box (which might be a -750 challan!). For the last 45 m, bollards lock you into your lane, and the lane you're in when you cross the gate line is your route. The HUD banner shows the options and highlights your lane.
 - **Highway Orders:** every run deals three random missions (near-misses, overtakes, smashes, top speed, slipstream time, distance...). Each one completed is worth **+3 seconds and +1,000 points**.
 
 ## 🔊 Meme Voice Rewards

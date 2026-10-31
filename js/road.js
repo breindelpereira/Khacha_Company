@@ -282,10 +282,35 @@ class RoadManager {
     }
 
     // =========================================================================
+    // 1b. ROUTE CHOICE JUNCTION: a deal over each lane, bollards lock you into a lane
+    // for the last ROUTE_LOCK_LENGTH metres; your lane at the gate picks the route.
+    // =========================================================================
+    if (window.isRouteChunk && window.isRouteChunk(zPos, this.chunkLength)) {
+      const options = window.pickRouteOptions();
+      const gate = window.sceneryBuilder.createRouteGantry(options, window.ROUTE_LANES);
+      gate.position.set(xCenter, yCenter, chunkMidZ);
+      gate.rotation.y = angle;
+      gate.userData = { isRouteGate: true, options, resolved: false, lockedLane: null };
+      group.add(gate);
+      items.push(gate);
+
+      // Bollard rows on the three lane boundaries, following the road curve
+      for (let dz = 2; dz <= window.ROUTE_LOCK_LENGTH; dz += 4) {
+        const bz = chunkMidZ + dz;
+        [-3.6, 0, 3.6].forEach(bx => {
+          const bollard = window.sceneryBuilder.createBollard();
+          bollard.position.set(this.getRoadCurve(bz) + bx, this.getRoadElevation(bz), bz);
+          group.add(bollard);
+        });
+      }
+    }
+    const nearJunction = window.nearRouteJunction ? window.nearRouteJunction(zPos) : false;
+
+    // =========================================================================
     // 2. HIGHWAY CONSTRUCTION BARRICADES & DIVERSIONS (Every ~240m, not at toll)
     // Red/white barricades, orange cones, and blinking amber beacons blocking 1 lane
     // =========================================================================
-    if (Math.abs(zPos) > 120 && Math.abs(zPos % 240) < this.chunkLength && Math.abs(zPos - (-300)) > 60 && Math.abs(zPos - (-900)) > 60) {
+    if (!nearJunction && Math.abs(zPos) > 120 && Math.abs(zPos % 240) < this.chunkLength && Math.abs(zPos - (-300)) > 60 && Math.abs(zPos - (-900)) > 60) {
       const candidateLanes = [-5.4, -1.8, 1.8, 5.4];
       const laneX = candidateLanes[Math.floor(Math.random() * candidateLanes.length)];
       const barricade = window.sceneryBuilder.createConstructionZone(laneX);
@@ -396,7 +421,7 @@ class RoadManager {
     // 9. MEME POWER-UP PICKUPS (Every ~180m)
     // Adapts to selected vehicle: Sting Red for Swift, Vimal for Truck, Chai for Auto
     // =========================================================================
-    if (Math.abs(zPos) > 60 && Math.abs(zPos % 180) < this.chunkLength && Math.abs(zPos - (-300)) > 50 && Math.abs(zPos - (-900)) > 50) {
+    if (!nearJunction && Math.abs(zPos) > 60 && Math.abs(zPos % 180) < this.chunkLength && Math.abs(zPos - (-300)) > 50 && Math.abs(zPos - (-900)) > 50) {
       const vType = (window.game && window.game.selectedVehicle) || 'auto';
       const pickup = window.sceneryBuilder.createChaiPickup(vType);
       const lanes = [-5.4, -1.8, 1.8, 5.4];

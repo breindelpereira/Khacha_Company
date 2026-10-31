@@ -1315,3 +1315,62 @@ body.nitro-flash #game-container::after {
 @media (max-width: 600px) {
   .challan-body { grid-template-columns: 1fr; }
 }
+
+/* Route Choice junction banner */
+.route-banner {
+  position: absolute;
+  left: 50%;
+  top: 92px;
+  transform: translateX(-50%) translateY(-12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid rgba(250, 204, 21, .5);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+}
+.route-banner.active { opacity: 1; transform: translateX(-50%) translateY(0); }
+.route-title { font: 800 12px/1 Outfit, sans-serif; letter-spacing: .14em; color: #facc15; white-space: nowrap; }
+.route-options { display: grid; grid-template-columns: repeat(4, 104px); gap: 6px; }
+.route-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c) 35%, rgba(15,23,42,.9));
+  border: 2px solid transparent;
+  color: #fff;
+  opacity: .6;
+  transition: opacity .15s, transform .15s, border-color .15s;
+}
+.route-opt .r-icon { font-size: 20px; line-height: 1; }
+.route-opt .r-title { font: 700 18px/1 Teko, Impact, sans-serif; letter-spacing: .04em; white-space: nowrap; }
+.route-opt.current { opacity: 1; border-color: #fff; transform: translateY(-3px) scale(1.06); }
+.route-opt.locked { border-color: #facc15; box-shadow: 0 0 16px rgba(250,204,21,.6); }
+.route-effect {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  top: 110px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(202, 138, 4, .85);
+  color: #fff;
+  font: 800 11px/1 Outfit, sans-serif;
+  letter-spacing: .1em;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.route-effect.active { opacity: 1; }
+.popup-route { color: #fde047; font-size: 46px; text-shadow: 0 4px 0 rgba(0,0,0,.5), 0 0 24px rgba(250,204,21,.8); }
+@media (max-width: 600px), (max-height: 720px) {
+  .route-banner { top: 84px; padding: 8px; }
+  .route-options { grid-template-columns: repeat(4, minmax(64px, 22vw)); }
+  .route-opt .r-title { font-size: 14px; }
+}

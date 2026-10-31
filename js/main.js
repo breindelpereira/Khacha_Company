@@ -93,6 +93,10 @@ class Game {
       speedLines: document.getElementById('speed-lines'),
       missionList: document.getElementById('mission-list'),
       slipBadge: document.getElementById('slip-badge'),
+      routeBanner: document.getElementById('route-banner'),
+      routeTitle: document.getElementById('route-title'),
+      routeOptions: document.getElementById('route-options'),
+      routeEffect: document.getElementById('route-effect'),
       finalOvertakes: document.getElementById('final-overtakes'),
       finalSmashes: document.getElementById('final-smashes'),
       finalStreak: document.getElementById('final-streak'),
@@ -779,6 +783,8 @@ class Game {
     this.clearInput();
     document.body.classList.remove('slowmo', 'nitro-flash');
     if (this.dom.popups) this.dom.popups.innerHTML = '';
+    if (this.dom.routeBanner) this.dom.routeBanner.classList.remove('active');
+    if (this.dom.routeEffect) this.dom.routeEffect.classList.remove('active');
 
     // Reset road chunks cleanly to starting line (z = 0)
     this.road.reset(0);
@@ -1171,8 +1177,73 @@ class Game {
     this.sunLight.target.updateMatrixWorld();
   }
 
+  // Route Choice banner: shows the 4 lane deals and which lane you're in
+  updateRouteBanner(stats) {
+    const banner = this.dom.routeBanner;
+    if (!banner) return;
+    const r = stats.route;
+    banner.classList.toggle('active', !!r);
+    if (r) {
+      if (this._routeOptionsRef !== r.options) {
+        this._routeOptionsRef = r.options;
+        this.dom.routeOptions.innerHTML = '';
+        r.options.forEach(opt => {
+          const el = document.createElement('div');
+          el.className = 'route-opt';
+          el.style.setProperty('--c', opt.color);
+          const icon = document.createElement('span');
+          icon.className = 'r-icon';
+          icon.textContent = opt.icon;
+          const title = document.createElement('span');
+          title.className = 'r-title';
+          title.textContent = opt.title;
+          el.append(icon, title);
+          this.dom.routeOptions.appendChild(el);
+        });
+      }
+      [...this.dom.routeOptions.children].forEach((el, i) => {
+        el.classList.toggle('current', i === r.lane);
+        el.classList.toggle('locked', r.locked && i === r.lane);
+      });
+      this.dom.routeTitle.textContent = r.locked
+        ? `🔒 LOCKED IN • GATE IN ${Math.ceil(r.dist)}m`
+        : `🔀 ROUTE CHOICE IN ${Math.ceil(r.dist)}m • PICK A LANE`;
+    }
+
+    // Active timed route effects
+    let effect = '';
+    if (stats.scoreMult > 1) effect = `💰 2X SCORE ${Math.ceil(this.traffic.scoreMultTimer)}s`;
+    else if (stats.rushActive) effect = `🚦 RUSH HOUR • 3X NEAR-MISS ${Math.ceil(this.traffic.rushTimer)}s`;
+    if (this.dom.routeEffect) {
+      this.dom.routeEffect.textContent = effect;
+      this.dom.routeEffect.classList.toggle('active', !!effect);
+    }
+  }
+
+  applyRouteChoice(option) {
+    if (option.id === 'time') {
+      this.sessionTimer = Math.min(this.sessionTimer + 6, MAX_SESSION_SECONDS);
+    }
+    const good = option.id !== 'challan';
+    this.spawnPopup(`${option.icon} ${option.title}`, good ? 'route' : 'lost');
+    if (good) {
+      window.soundEngine.playMissionComplete();
+      this.emitBurst(this.traffic.player.position, 20, parseInt(option.color.slice(1), 16), 7);
+    } else {
+      window.soundEngine.playBump();
+      this.addShake(0.4);
+    }
+  }
+
   // React to per-frame gameplay events from the traffic simulation
   handleEvents(stats) {
+    this.updateRouteBanner(stats);
+    if (stats.routeChoice) this.applyRouteChoice(stats.routeChoice);
+    if (stats.scraped) {
+      window.soundEngine.playBump();
+      this.addShake(0.2);
+      this.emitBurst(this.traffic.player.position, 6, 0xfbbf24, 4);
+    }
     stats.events.forEach(e => this.spawnPopup(e.text, e.kind));
     if (stats.smash) {
       this.addShake(0.6);

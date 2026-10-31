@@ -11,6 +11,7 @@ const MISSION_POOL = [
   { id: 'smash', stat: 'smashCount', targets: [1, 2, 4], label: n => `Nitro-smash ${n} ${n === 1 ? 'vehicle' : 'vehicles'}` },
   { id: 'pickup', stat: 'chaiCount', targets: [1, 2, 3], label: n => `Grab ${n} power-up${n === 1 ? '' : 's'}` },
   { id: 'slip', stat: 'slipstreamTime', targets: [3, 5, 8], label: n => `Slipstream for ${n}s total` },
+  { id: 'route', stat: 'routesTaken', targets: [1, 2], label: n => `Take ${n} Route Choice junction${n === 1 ? '' : 's'}` },
   { id: 'toll', stat: 'tollCount', targets: [1], label: () => 'Clear a FASTag green lane' },
   { id: 'distance', stat: 'distanceCovered', targets: [500, 700, 900], label: n => `Drive ${(n / 1000).toFixed(1)} km` },
   // Speed targets are scaled to the ride's top speed (km/h) in pickMissions
