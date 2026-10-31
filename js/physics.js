@@ -305,15 +305,61 @@ class TrafficManager {
       length: length,
       nearMissed: false,
       passArmed: false,
-      parked: false
+      parked: false,
+      exit: null // set while driving down a branch road (the route the player didn't take)
     };
   }
 
   // Replace a vehicle with a brand-new one (new type/mesh) at z
-  rerollVehicle(v, z) {
+  rerollVehicle(v, z, forcedType = null) {
     this.scene.remove(v.mesh);
     window.vehicleBuilder.disposeVehicle(v.mesh);
-    Object.assign(v, this.makeAIVehicle(z));
+    Object.assign(v, this.makeAIVehicle(z, forcedType));
+  }
+
+  // Send a few vehicles of the other route's type down the road the player didn't take
+  seedBranch(gateZ, mix, playerZ) {
+    const branch = this.road.branches.find(b => b.gateZ === gateZ);
+    if (!branch) return;
+    const free = v => !v.exit && !v.knocked;
+    const candidates = [
+      ...this.vehicles.filter(v => free(v) && v.parked),
+      ...this.vehicles.filter(v => free(v) && !v.parked && playerZ - v.mesh.position.z < -15),
+      ...this.vehicles.filter(v => free(v) && !v.parked && playerZ - v.mesh.position.z > 160)
+    ];
+    candidates.slice(0, 4).forEach((v, i) => {
+      const z = gateZ - (50 + i * 55 + Math.random() * 15);
+      this.rerollVehicle(v, z, window.pickTrafficType(mix));
+      v.exit = { branch, lane: i % 2 === 0 ? -1.8 : 1.8 };
+      this.driveBranch(v, 0, playerZ);
+    });
+  }
+
+  // Move a vehicle along its branch road; returns false once it has driven off the end
+  driveBranch(v, delta, playerZ) {
+    v.speedUnits = THREE.MathUtils.lerp(v.speedUnits, v.baseSpeedUnits, delta * 1.5);
+    v.mesh.position.z -= v.speedUnits * delta;
+    const p = this.road.sampleBranch(v.exit.branch, v.mesh.position.z);
+    if (!p) {
+      v.exit = null;
+      const active = this.vehicles.filter(o => !o.parked).length;
+      if (this.trafficProfile && active > this.trafficProfile.count) {
+        v.parked = true;
+        v.mesh.visible = false;
+      } else {
+        this.recycleVehicle(v, playerZ);
+      }
+      return false;
+    }
+    v.mesh.position.x = p.x + v.exit.lane * Math.cos(p.angle);
+    v.mesh.position.y = p.y;
+    v.mesh.rotation.set(0, p.angle, 0);
+    window.vehicleBuilder.setBrakeLights(v.mesh, false);
+    if (v.mesh.userData.wheels) {
+      const rot = v.speedUnits * delta * 3.5;
+      v.mesh.userData.wheels.forEach(w => w.rotation.x += rot);
+    }
+    return true;
   }
 
   // Switch traffic to a route's mix, density and speed. Vehicles near the player stay put.
@@ -322,6 +368,7 @@ class TrafficManager {
     const count = profile ? profile.count : this.vehicles.length;
     let spawnAhead = 140;
     this.vehicles.forEach((v, i) => {
+      if (v.exit) return; // let vehicles already taking the branch finish their trip
       if (i >= count) {
         v.parked = true;
         v.mesh.visible = false;
@@ -396,6 +443,7 @@ class TrafficManager {
     v.nearMissed = false;
     v.passArmed = false;
     v.knocked = null;
+    v.exit = null;
   }
 
   // Nitro ram: launch a vehicle off the road in a spinning arc
@@ -432,7 +480,7 @@ class TrafficManager {
     const playerLane = this.playerLateralOffset;
 
     this.vehicles.forEach(v => {
-      if (v.knocked || v.parked) return;
+      if (v.knocked || v.parked || v.exit) return;
       const distZ = playerZ - v.mesh.position.z;
       // If vehicle is 5m to 65m ahead and roughly in player's path (+/- 2.6m)
       if (distZ > 5 && distZ < 65 && Math.abs(v.laneOffset - playerLane) < 2.6) {
@@ -565,6 +613,7 @@ class TrafficManager {
     let routeInfo = null;
     let routeChoice = null;
     let routeDecided = null;
+    let routeGateZ = null;
     let scraped = false;
     this.scrapeCooldown -= delta;
     const pz = this.player.position.z;
@@ -576,7 +625,7 @@ class TrafficManager {
       if (!isAutopilot && (inZone || ahead <= 0) && ud.lockedSide === null) {
         // Commit now so the road beyond the gate can be rebuilt well out of sight
         ud.lockedSide = window.sideIndex(this.playerLateralOffset);
-        routeDecided = { gateZ: gate.position.z, route: ud.options[ud.lockedSide], side: ud.lockedSide };
+        routeDecided = { gateZ: gate.position.z, route: ud.options[ud.lockedSide], other: ud.options[1 - ud.lockedSide], side: ud.lockedSide };
       }
       if (inZone && !isAutopilot) {
         const half = this.playerWidth * 0.5;
@@ -607,6 +656,7 @@ class TrafficManager {
         this.routePerk = route.perk;
         this.routesTaken++;
         routeChoice = route;
+        routeGateZ = gate.position.z;
       }
     });
 
@@ -704,6 +754,35 @@ class TrafficManager {
         return;
       }
 
+      // Traffic in the other carriageway takes the branch road at a split
+      if (!v.exit) {
+        for (const b of this.road.branches) {
+          const d = b.gateZ - v.mesh.position.z;
+          if (d >= 20 && d < 45 && Math.sign(v.laneOffset) === b.sign) {
+            v.exit = { branch: b, lane: THREE.MathUtils.clamp(v.laneOffset - b.sign * 3.6, -1.8, 1.8) };
+            break;
+          }
+        }
+      }
+      if (v.exit) {
+        if (this.driveBranch(v, delta, playerZ) && !isAutopilot) {
+          // Still solid while it shares the road with the player near the split
+          const bdx = Math.abs(playerX - v.mesh.position.x);
+          const bdz = Math.abs(playerZ - v.mesh.position.z);
+          if (bdx < (playerWidth + v.width) * 0.42 && bdz < (playerLength + v.length) * 0.42) {
+            if (this.isNitro) {
+              v.exit = null;
+              this.knockVehicle(v, playerX);
+              this.smashCount++;
+              smashOccurred = true;
+            } else if (this.invulnerableTimer <= 0) {
+              collisionOccurred = true;
+            }
+          }
+        }
+        return;
+      }
+
       const distAheadOfPlayer = playerZ - v.mesh.position.z; // Positive = vehicle is in front of player
 
       // 1. Static Hazard & Toll Plaza Avoidance for AI
@@ -735,7 +814,7 @@ class TrafficManager {
               if (safeLanes.length > 0) {
                 // Find clear safe lane not occupied by another car
                 const clearLanes = safeLanes.filter(sl => !this.vehicles.some(other =>
-                  other !== v && !other.parked && Math.abs(other.laneOffset - sl) < 1.8 && Math.abs(other.mesh.position.z - v.mesh.position.z) < 18
+                  other !== v && !other.parked && !other.exit && Math.abs(other.laneOffset - sl) < 1.8 && Math.abs(other.mesh.position.z - v.mesh.position.z) < 18
                 ));
                 const candidates = clearLanes.length > 0 ? clearLanes : safeLanes;
                 candidates.sort((a, b) => Math.abs(a - v.laneOffset) - Math.abs(b - v.laneOffset));
@@ -768,7 +847,7 @@ class TrafficManager {
       let closestAhead = null;
       let minGapZ = 999;
       this.vehicles.forEach(other => {
-        if (other === v || other.knocked || other.parked) return;
+        if (other === v || other.knocked || other.parked || other.exit) return;
         const gapZ = v.mesh.position.z - other.mesh.position.z; // other is ahead of v if gapZ > 0
         if (gapZ > 0 && gapZ < minGapZ) {
           const latDist = Math.abs(other.laneOffset - v.laneOffset);
@@ -801,7 +880,7 @@ class TrafficManager {
 
       // 4. Lateral Anti-Clipping: prevent side-by-side overlap during lane changes
       this.vehicles.forEach(other => {
-        if (other === v || other.knocked || other.parked) return;
+        if (other === v || other.knocked || other.parked || other.exit) return;
         const dZ = Math.abs(v.mesh.position.z - other.mesh.position.z);
         if (dZ < 4.5) {
           const dX = v.laneOffset - other.laneOffset;
@@ -829,7 +908,7 @@ class TrafficManager {
         const safeCandidates = candidateIndices.filter(idx => {
           const testLane = this.lanes[idx];
           const blockedByCar = this.vehicles.some(other => {
-            if (other === v || other.parked) return false;
+            if (other === v || other.parked || other.exit) return false;
             const sameLane = Math.abs(other.laneOffset - testLane) < 1.8;
             const closeDist = Math.abs(other.mesh.position.z - v.mesh.position.z);
             return sameLane && closeDist < 18;
@@ -1148,6 +1227,7 @@ class TrafficManager {
       route: routeInfo,
       routeChoice: routeChoice,
       routeDecided: routeDecided,
+      routeGateZ: routeGateZ,
       scraped: scraped
     };
   }

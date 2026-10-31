@@ -1,6 +1,8 @@
 // Procedural Endless Highway & Terrain Generator for NH Odyssey
 // Generates winding highway curves, elevation, road markings, and roadside scenery chunks
 
+const BRANCH_LENGTH = 650; // metres a branch road runs before it disappears into the haze
+
 class RoadManager {
   constructor(scene) {
     this.scene = scene;
@@ -26,10 +28,16 @@ class RoadManager {
     this.matShoulderCoast = new THREE.MeshLambertMaterial({ color: 0xd6b37a });
     this.matSea = new THREE.MeshLambertMaterial({ color: 0x0ea5e9 });
     this.matPillar = new THREE.MeshLambertMaterial({ color: 0x9ca3af });
+    this.matBranchAsphalt = new THREE.MeshLambertMaterial({ color: 0x2a2e36 });
+    this.matBranchSkirt = new THREE.MeshLambertMaterial({ color: 0x7c5f3e });
+    this._branchDashGeo = new THREE.PlaneGeometry(0.2, 3.5);
+    this._branchDashGeo.rotateX(-Math.PI / 2);
     this.matParapet = new THREE.MeshLambertMaterial({ color: 0xe5e7eb });
 
     // Chosen routes: [{ gateZ, routeId, side }], set as the player commits at each junction
     this.routePlan = [];
+    // The road NOT taken at each junction, kept as real geometry that traffic can drive down
+    this.branches = [];
 
     this.matMedian = new THREE.MeshLambertMaterial({ color: 0x334155 });   // Concrete median divider
     this.matWhiteLine = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -74,15 +82,126 @@ class RoadManager {
     return window.routeShape(window.ROUTES[seg.entry.routeId], seg.d, seg.entry.side);
   }
 
-  // Commit a route at a junction and rebuild the road beyond the gate in its shape
-  setRoute(gateZ, routeId, side) {
+  // Commit a route at a junction and rebuild the road beyond the gate in its shape.
+  // The other carriageway becomes a branch road that peels off towards `otherRouteId`.
+  setRoute(gateZ, routeId, side, otherRouteId = null) {
     this.routePlan = this.routePlan.filter(e => e.gateZ !== gateZ);
     this.routePlan.push({ gateZ, routeId, side });
+    if (otherRouteId && !this.branches.some(b => b.gateZ === gateZ)) {
+      this.buildBranch(gateZ, window.ROUTES[otherRouteId], 1 - side);
+    }
     const limit = gateZ - window.ROUTE_START;
     const stale = this.chunks.filter(c => c.userData.zPos <= limit);
     stale.forEach(c => this.scene.remove(c));
     this.chunks = this.chunks.filter(c => c.userData.zPos > limit);
     stale.map(c => c.userData.zPos).sort((a, b) => b - a).forEach(z => this.createChunk(z));
+  }
+
+  // How far the branch centreline sits from the main road centre, d metres past its gate
+  static branchSeparation(d) {
+    return 3.6 + 220 * window.smoothstep(30, BRANCH_LENGTH, d);
+  }
+
+  // Build the road not taken: a 2-lane road on an embankment (or flyover piers) peeling away
+  buildBranch(gateZ, route, side) {
+    const sign = side === 0 ? -1 : 1;
+    const samples = [];
+    for (let d = 20; d <= BRANCH_LENGTH; d += 5) {
+      const z = gateZ - d;
+      const sep = RoadManager.branchSeparation(d);
+      const lift = route.lift * window.smoothstep(80, 220, d);
+      // Slightly below the main road while the two overlap, so the main surface wins
+      const y = this.getGroundElevation(z) + lift - (sep < 10 ? 0.04 : 0);
+      samples.push({ d, z, x: this.getRoadCurve(z) + sign * sep, y, lift });
+    }
+    samples.forEach((p, i) => {
+      const a = samples[Math.max(0, i - 1)];
+      const b = samples[Math.min(samples.length - 1, i + 1)];
+      // Heading in the XZ plane (forward = -Z), same convention as getRoadAngle
+      p.angle = Math.atan2(-(b.x - a.x), a.z - b.z);
+    });
+
+    const group = new THREE.Group();
+    const hw = 4.0;          // 2 lanes
+    const shoulder = 1.6;
+    const roadV = [], shoulderV = [], skirtV = [];
+    samples.forEach(p => {
+      // Perpendicular to the heading
+      const px = Math.cos(p.angle), pz = -Math.sin(p.angle);
+      const at = (off, dy) => [p.x + px * off, p.y + dy, p.z + pz * off];
+      roadV.push(...at(-hw, 0), ...at(hw, 0));
+      shoulderV.push(...at(-hw - shoulder, -0.05), ...at(-hw, 0), ...at(hw, 0), ...at(hw + shoulder, -0.05));
+      const drop = p.lift > 0.8 ? 0.6 : 4.5; // embankment unless it's up on piers
+      skirtV.push(...at(-hw - shoulder, -0.05), ...at(-hw - shoulder - 3.5, -drop), ...at(hw + shoulder, -0.05), ...at(hw + shoulder + 3.5, -drop));
+    });
+    const n = samples.length - 1;
+    const ribbon = (verts, stride, pairs, mat) => {
+      const geo = new THREE.BufferGeometry();
+      const idx = [];
+      for (let i = 0; i < n; i++) {
+        pairs.forEach(([l, r]) => {
+          const a = i * stride + l, b = i * stride + r, c = (i + 1) * stride + l, d2 = (i + 1) * stride + r;
+          idx.push(a, b, c, b, d2, c);
+        });
+      }
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.material.side = THREE.DoubleSide;
+      return mesh;
+    };
+    group.add(ribbon(roadV, 2, [[0, 1]], this.matBranchAsphalt));
+    group.add(ribbon(shoulderV, 4, [[0, 1], [2, 3]], this.matShoulderExpress));
+    group.add(ribbon(skirtV, 4, [[0, 1], [2, 3]], this.matBranchSkirt));
+
+    // Dashed centre line, flyover piers, parapets
+    samples.forEach((p, i) => {
+      if (i % 2 === 0 && p.d > 40) {
+        const dash = new THREE.Mesh(this._branchDashGeo, this.matWhiteLine);
+        dash.position.set(p.x, p.y + 0.03, p.z);
+        dash.rotation.y = p.angle;
+        group.add(dash);
+      }
+      if (p.lift > 0.8 && i % 4 === 0) {
+        const pierH = p.lift + 2;
+        const pier = new THREE.Mesh(new THREE.BoxGeometry(1.8, pierH, 1.4), this.matPillar);
+        pier.position.set(p.x, p.y - pierH / 2 - 0.3, p.z);
+        pier.rotation.y = p.angle;
+        group.add(pier);
+      }
+    });
+
+    // Destination sign at the start of the branch
+    const start = samples.find(p => p.d >= 70) || samples[0];
+    const sign_ = window.sceneryBuilder.createBranchSign(route, sign < 0 ? '↖' : '↗');
+    sign_.position.set(start.x + sign * 6.5, start.y, start.z);
+    sign_.rotation.y = start.angle;
+    group.add(sign_);
+
+    this.scene.add(group);
+    this.branches.push({ gateZ, side, sign, route, group, samples });
+  }
+
+  // Position on a branch at world z (interpolated), or null if off its ends
+  sampleBranch(branch, z) {
+    const d = branch.gateZ - z;
+    const s = branch.samples;
+    if (d < s[0].d || d > s[s.length - 1].d) return null;
+    const i = Math.min(s.length - 2, Math.floor((d - s[0].d) / 5));
+    const a = s[i], b = s[i + 1];
+    const t = (d - a.d) / (b.d - a.d);
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: a.angle + (b.angle - a.angle) * t, d };
+  }
+
+  // Would roadside scenery at (z, lateral offset from the main road centre) sit on a branch road?
+  onBranch(z, lateral) {
+    return this.branches.some(b => {
+      const d = b.gateZ - z;
+      if (d < 20 || d > BRANCH_LENGTH) return false;
+      if (Math.sign(lateral) !== b.sign) return false;
+      return Math.abs(Math.abs(lateral) - RoadManager.branchSeparation(d)) < 16;
+    });
   }
 
   // Get road center X offset at distance Z
@@ -140,6 +259,8 @@ class RoadManager {
     });
     this.chunks = [];
     this.routePlan = [];
+    this.branches.forEach(b => this.scene.remove(b.group));
+    this.branches = [];
     this.init(startZ);
   }
 
@@ -488,6 +609,7 @@ class RoadManager {
         const tower = window.sceneryBuilder.createUrbanBuilding(side, height);
         const dist = this.roadWidth * 0.5 + 16.0 + Math.random() * 20.0;
         const bZ = chunkMidZ + (Math.random() * 20 - 10);
+        if (this.onBranch(bZ, side * dist)) return;
         tower.position.set(this.getRoadCurve(bZ) + side * dist, this.getGroundElevation(bZ), bZ);
         tower.rotation.y = angle;
         group.add(tower);
@@ -508,7 +630,7 @@ class RoadManager {
     // 7. ROADSIDE DHABA (Rural & Expressway)
     // Authentic charpais, glowing string lights, tandoor hut
     // =========================================================================
-    if ((biome === 'rural' || biome === 'expressway') && Math.abs(zPos % 180) < this.chunkLength) {
+    if ((biome === 'rural' || biome === 'expressway') && Math.abs(zPos % 180) < this.chunkLength && !this.onBranch(chunkMidZ, 16)) {
       const dhaba = window.sceneryBuilder.createDhaba();
       dhaba.position.set(xCenter + 16, yGround, chunkMidZ);
       dhaba.rotation.y = angle - Math.PI / 2;
@@ -550,9 +672,10 @@ class RoadManager {
     // 10. HIGHWAY BILLBOARDS (Every ~150m)
     // Authentic Desi advertisements & Khacha Company branding
     // =========================================================================
-    if (Math.abs(zPos % 150) < this.chunkLength) {
+    const billboardSide = Math.random() < 0.5 ? -1 : 1;
+    if (Math.abs(zPos % 150) < this.chunkLength && !this.onBranch(chunkMidZ, billboardSide * (this.roadWidth * 0.5 + 8))) {
       const billboard = window.sceneryBuilder.createHighwayBillboard(Math.floor(Math.abs(zPos / 150)));
-      const side = Math.random() < 0.5 ? -1 : 1;
+      const side = billboardSide;
       billboard.position.set(xCenter + side * (this.roadWidth * 0.5 + 8.0), yGround, chunkMidZ);
       billboard.rotation.y = angle + (side > 0 ? -Math.PI * 0.45 : Math.PI * 0.45);
       group.add(billboard);
@@ -592,7 +715,9 @@ class RoadManager {
         const rock = window.sceneryBuilder.createRockCliff();
         const side = r === 0 ? 1 : (Math.random() < 0.7 ? -1 : 1);
         const rZ = zPos - Math.random() * this.chunkLength;
-        rock.position.set(this.getRoadCurve(rZ) + side * (this.roadWidth * 0.5 + 9 + Math.random() * 14), this.getGroundElevation(rZ), rZ);
+        const rDist = this.roadWidth * 0.5 + 9 + Math.random() * 14;
+        if (this.onBranch(rZ, side * rDist)) continue;
+        rock.position.set(this.getRoadCurve(rZ) + side * rDist, this.getGroundElevation(rZ), rZ);
         group.add(rock);
         items.push(rock);
       }
@@ -607,6 +732,7 @@ class RoadManager {
       const side = biome === 'coastal' ? (Math.random() < 0.75 ? 1 : -1) : (Math.random() < 0.5 ? -1 : 1);
       const dist = this.roadWidth * 0.5 + 6.0 + Math.random() * 15;
       const treeZ = zPos - Math.random() * this.chunkLength;
+      if (this.onBranch(treeZ, side * dist)) continue;
       tree.position.set(this.getRoadCurve(treeZ) + side * dist, this.getGroundElevation(treeZ), treeZ);
       tree.scale.setScalar(0.85 + Math.random() * 0.4);
       group.add(tree);
@@ -618,6 +744,14 @@ class RoadManager {
 
   // Update chunks as player moves forward (endless recycling)
   update(playerZ) {
+    // Drop branch roads the player has left far behind
+    for (let i = this.branches.length - 1; i >= 0; i--) {
+      if (playerZ < this.branches[i].gateZ - BRANCH_LENGTH - 60) {
+        this.scene.remove(this.branches[i].group);
+        this.branches.splice(i, 1);
+      }
+    }
+
     // Check if player has progressed past earliest chunks
     for (let i = this.chunks.length - 1; i >= 0; i--) {
       const chunk = this.chunks[i];

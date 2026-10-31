@@ -1258,6 +1258,24 @@ class SceneryBuilder {
     return group;
   }
 
+  // Roadside destination board where the road not taken peels off
+  createBranchSign(route, arrow) {
+    const group = new THREE.Group();
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(5, 2.5),
+      new THREE.MeshBasicMaterial({ map: this.createRouteSignTexture(route, arrow), side: THREE.DoubleSide })
+    );
+    board.position.y = 4.2;
+    group.add(board);
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3, metalness: 0.8 });
+    [-2, 2].forEach(x => {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 5.5, 8), postMat);
+      post.position.set(x, 2.75, -0.1);
+      group.add(post);
+    });
+    return group;
+  }
+
   // Concrete jersey barrier segment (red/white striped top) splitting the carriageways
   createJerseyBarrier() {
     if (!this._jerseyGeo) {

@@ -1268,10 +1268,18 @@ class Game {
     if (stats.routeDecided) {
       // Committed at the barrier: reshape the road beyond the gate for the chosen route
       const d = stats.routeDecided;
-      this.road.setRoute(d.gateZ, d.route.id, d.side);
+      this.road.setRoute(d.gateZ, d.route.id, d.side, d.other.id);
+      this.pendingBranchMix = d.other.traffic.mix;
       this.traffic.updatePickupVisuals(this.selectedVehicle);
     }
-    if (stats.routeChoice) this.applyRouteChoice(stats.routeChoice);
+    if (stats.routeChoice) {
+      this.applyRouteChoice(stats.routeChoice);
+      // Fill the road not taken with that route's traffic heading off down it
+      if (this.pendingBranchMix) {
+        this.traffic.seedBranch(stats.routeGateZ, this.pendingBranchMix, this.traffic.player.position.z);
+        this.pendingBranchMix = null;
+      }
+    }
     if (stats.scraped) {
       window.soundEngine.playBump();
       this.addShake(0.2);

@@ -57,6 +57,8 @@ npx serve .
 - **Khacha Meter** fills from near-misses, overtakes, power-ups, FASTag lanes and **slipstreaming** (tuck in right behind a vehicle for a small speed tow). When it glows, hit `Shift` for **KHACHA NITRO**: +45% top speed, and you **smash traffic and barricades out of the way** for bonus points instead of crashing. Toll booth pillars will still stop you.
 - **🔀 Pick your route:** at 540 m, and every 480 m after, the highway splits in two. Gantry signs show where each carriageway goes. Once the concrete centre barrier starts you're committed to your side, and the road beyond reshapes itself into that route with its own scenery, sky and traffic:
 
+  The road you *don't* pick doesn't vanish: it peels away from the other carriageway as a real 2-lane road (on an embankment, or up on piers if it's the flyover), and the traffic in that carriageway, plus some of that route's own buses, trucks and taxis, takes the exit and drives off down it.
+
   | Route | What changes | Traffic | Perk |
   | :--- | :--- | :--- | :--- |
   | 🏙 **City Flyover** | Road climbs 8 m onto pillars through a neon-night skyline | Light & fast (cars, taxis, bikes) | +15% top speed |
