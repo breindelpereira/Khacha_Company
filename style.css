@@ -1095,3 +1095,223 @@ body, html {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ========================================================
+   FUN LAYER: Khacha Meter, combos, popups, missions, FX
+   ======================================================== */
+
+/* Radial speed lines (opacity driven from JS by speed) */
+.speed-lines {
+  position: fixed;
+  inset: -10%;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg at 50% 46%, rgba(255,255,255,.55) 0deg .6deg, transparent .6deg 7deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 46%, transparent 0 32%, #000 70%);
+          mask-image: radial-gradient(circle at 50% 46%, transparent 0 32%, #000 70%);
+  animation: speed-flicker .12s steps(2) infinite;
+  transition: opacity .25s linear;
+}
+.speed-lines.nitro {
+  background: repeating-conic-gradient(from 0deg at 50% 46%, rgba(56,189,248,.8) 0deg .8deg, transparent .8deg 5deg);
+}
+@keyframes speed-flicker {
+  0% { transform: rotate(0deg) scale(1); }
+  100% { transform: rotate(1.6deg) scale(1.02); }
+}
+
+/* Slow-mo vignette */
+.slowmo-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 45%, rgba(88, 28, 135, .55) 100%);
+  transition: opacity .15s ease;
+}
+body.slowmo .slowmo-vignette { opacity: 1; }
+body.slowmo #game-container canvas { filter: saturate(1.4) contrast(1.08); }
+
+/* Nitro activation flash */
+body.nitro-flash #game-container::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle, rgba(125, 211, 252, .55), rgba(14, 165, 233, 0) 70%);
+  pointer-events: none;
+  animation: nitro-flash .45s ease-out forwards;
+}
+@keyframes nitro-flash { from { opacity: 1; } to { opacity: 0; } }
+
+/* Combo timer under the streak pill */
+.combo-track {
+  width: 100%;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.1);
+  overflow: hidden;
+}
+.combo-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.streak-pill.hot {
+  color: #fff;
+  background: linear-gradient(90deg, #f97316, #db2777);
+  border-color: transparent;
+  animation: streak-pulse .5s ease-in-out infinite alternate;
+}
+@keyframes streak-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+
+/* Khacha Meter */
+.khacha-meter {
+  pointer-events: all;
+  align-self: flex-end;
+  flex: 0 0 auto;
+  width: min(320px, 30vw);
+  max-width: min(320px, 30vw);
+  margin: 0 16px;
+  padding: 10px 14px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--paper);
+  font: 800 11px/1 Outfit, sans-serif;
+  letter-spacing: .12em;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+}
+.meter-label { display: block; margin-bottom: 8px; }
+.meter-track {
+  display: block;
+  height: 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.1);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #6366f1, #ec4899);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform .12s linear;
+}
+.khacha-meter.ready {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56,189,248,.5), 0 0 28px rgba(56,189,248,.6);
+  animation: meter-ready .6s ease-in-out infinite alternate;
+}
+.khacha-meter.ready .meter-label { color: #7dd3fc; }
+.khacha-meter.active { border-color: #f472b6; box-shadow: 0 0 30px rgba(236,72,153,.6); }
+.khacha-meter.active .meter-fill { background: linear-gradient(90deg, #f472b6, #facc15); transition: none; }
+.khacha-meter.denied { animation: meter-deny .3s ease; }
+@keyframes meter-ready { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+@keyframes meter-deny {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+/* Slipstream badge */
+.slip-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%) translateY(10px);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(14, 116, 144, .8);
+  color: #cffafe;
+  font: 800 11px/1 Outfit, sans-serif;
+  letter-spacing: .14em;
+  opacity: 0;
+  transition: opacity .2s, transform .2s;
+}
+.slip-badge.active { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Floating score popups */
+.popups {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 0;
+  height: 0;
+}
+.popup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  transform: translate(-50%, 0);
+  font: 700 34px/1 Teko, Impact, sans-serif;
+  letter-spacing: .04em;
+  color: #fde047;
+  text-shadow: 0 3px 0 rgba(0,0,0,.45), 0 0 18px rgba(250,204,21,.55);
+  animation: popup-rise 1.25s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.popup-smash { color: #fb7185; font-size: 44px; text-shadow: 0 3px 0 rgba(0,0,0,.5), 0 0 22px rgba(244,63,94,.7); }
+.popup-nitro { color: #7dd3fc; font-size: 56px; text-shadow: 0 4px 0 rgba(0,0,0,.5), 0 0 26px rgba(56,189,248,.8); }
+.popup-mission { color: #86efac; font-size: 30px; text-shadow: 0 3px 0 rgba(0,0,0,.5), 0 0 18px rgba(34,197,94,.7); }
+.popup-pickup, .popup-toll { color: #fcd34d; }
+.popup-lost { color: #cbd5e1; font-size: 24px; opacity: .8; }
+@keyframes popup-rise {
+  0% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), 20px) scale(.6); }
+  15% { opacity: 1; transform: translate(calc(-50% + var(--dx, 0px)), 0) scale(1.15); }
+  30% { transform: translate(calc(-50% + var(--dx, 0px)), -10px) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), -90px) scale(1); }
+}
+
+/* Highway Orders (missions) */
+.missions-panel {
+  position: absolute;
+  left: max(18px, env(safe-area-inset-left));
+  top: 110px;
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  font-family: Outfit, sans-serif;
+}
+.missions-title { display: block; white-space: nowrap; font-size: 11px; font-weight: 800; letter-spacing: .14em; color: var(--amber); margin-bottom: 6px; }
+.missions-title small { color: #94a3b8; font-weight: 600; letter-spacing: .04em; }
+.mission-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.mission-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.mission-list .m-prog { font-variant-numeric: tabular-nums; color: #94a3b8; }
+.mission-list li.done { color: #86efac; text-decoration: line-through; text-decoration-color: rgba(134,239,172,.5); }
+.mission-list li.done .m-prog { color: #22c55e; }
+
+/* Low-time warning */
+.timer-value.low { color: #f87171 !important; animation: streak-pulse .4s ease-in-out infinite alternate; }
+
+@media (max-width: 600px), (max-height: 720px) {
+  .missions-panel { top: 96px; width: 200px; padding: 8px 10px; }
+  .mission-list li { font-size: 11px; }
+  .khacha-meter { width: 40vw; padding: 8px 10px; }
+  .popup { font-size: 26px; }
+  .popup-nitro { font-size: 40px; }
+  .slip-badge { bottom: 130px; }
+}
+
+/* Challan: two-column stat grid so the extra stats fit on short screens */
+.challan-card { width: min(580px, 100%); margin: auto; padding: 26px 30px; }
+.challan-body { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; row-gap: 9px; margin-bottom: 18px; }
+.challan-divider, .challan-row.total-score, .challan-row.best-score, .driver-rank-box { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .challan-body { grid-template-columns: 1fr; }
+}

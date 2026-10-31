@@ -4,6 +4,198 @@
 class VehicleBuilder {
   constructor() {
     this.truckTailgateTexture = this.createTruckTailgateTexture();
+    this.autoRearTexture = this.createAutoRearTexture();
+    this.busSideTexture = this.createBusSideTexture();
+    this.busRearTexture = this.createBusRearTexture();
+    this.plateTextures = {};
+  }
+
+  // Shared lamp colours: dim when cruising, bright when braking
+  static get TAIL_DIM() { return 0x7f1d1d; }
+  static get TAIL_BRIGHT() { return 0xff3b3b; }
+
+  // Every vehicle gets its own tail-lamp material so brake lights can be toggled per vehicle
+  makeTailMaterial() {
+    return new THREE.MeshBasicMaterial({ color: VehicleBuilder.TAIL_DIM });
+  }
+
+  // Toggle brake lamps on any vehicle built by this class
+  setBrakeLights(vehicle, on) {
+    const mats = vehicle && vehicle.userData && vehicle.userData.brakeMats;
+    if (!mats || vehicle.userData.brakeOn === on) return;
+    vehicle.userData.brakeOn = on;
+    const hex = on ? VehicleBuilder.TAIL_BRIGHT : VehicleBuilder.TAIL_DIM;
+    mats.forEach(m => m.color.setHex(hex));
+  }
+
+  // Indian number plate (white background, black lettering)
+  getPlateTexture(text) {
+    if (this.plateTextures[text]) return this.plateTextures[text];
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, 256, 64);
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(3, 3, 250, 58);
+    ctx.fillStyle = '#1d4ed8';
+    ctx.fillRect(6, 6, 26, 52);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('IND', 19, 38);
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+    ctx.fillText(text, 144, 45);
+    const tex = new THREE.CanvasTexture(canvas);
+    this.plateTextures[text] = tex;
+    return tex;
+  }
+
+  createPlate(text, w = 0.52, h = 0.13) {
+    const plate = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ map: this.getPlateTexture(text) })
+    );
+    return plate;
+  }
+
+  randomPlate() {
+    const states = ['MH', 'KA', 'GJ', 'DL', 'TN', 'RJ', 'UP', 'GA'];
+    const s = states[Math.floor(Math.random() * states.length)];
+    const n = String(Math.floor(Math.random() * 90) + 10);
+    const l = String.fromCharCode(65 + Math.floor(Math.random() * 26), 65 + Math.floor(Math.random() * 26));
+    const d = String(Math.floor(Math.random() * 9000) + 1000);
+    return `${s}${n} ${l} ${d}`;
+  }
+
+  // Classic painted auto-rickshaw rear canvas: "OK TATA" + "Khacha Company"
+  createAutoRearTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, 256, 256);
+    // Checkered trim
+    for (let x = 0; x < 256; x += 16) {
+      ctx.fillStyle = (x / 16) % 2 === 0 ? '#facc15' : '#111827';
+      ctx.fillRect(x, 0, 16, 14);
+      ctx.fillStyle = (x / 16) % 2 === 0 ? '#111827' : '#facc15';
+      ctx.fillRect(x, 242, 16, 14);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 34px Impact, Arial Black, sans-serif';
+    ctx.fillText('OK TATA', 128, 68);
+    ctx.fillStyle = '#f472b6';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.fillText('Bura Mat Dekho', 128, 110);
+    ctx.fillStyle = '#22d3ee';
+    ctx.font = 'bold 22px Arial, sans-serif';
+    ctx.fillText('KHACHA COMPANY', 128, 150);
+    // Evil-eye
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(128, 200, 34, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1d4ed8';
+    ctx.beginPath();
+    ctx.arc(128, 200, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111827';
+    ctx.beginPath();
+    ctx.arc(128, 200, 6, 0, Math.PI * 2);
+    ctx.fill();
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // State transport bus livery with windows
+  createBusSideTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#b91c1c';
+    ctx.fillRect(0, 0, 512, 128);
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(0, 78, 512, 14);
+    // Windows
+    ctx.fillStyle = '#1e293b';
+    for (let x = 16; x < 500; x += 54) {
+      ctx.fillRect(x, 12, 44, 52);
+    }
+    ctx.fillStyle = '#fef3c7';
+    ctx.font = 'bold 22px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MSRTC  •  NH-44 EXPRESS  •  यात्री सेवा', 256, 118);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // Bus rear: route board, slogan and "Keep Distance" warning
+  createBusRearTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#b91c1c';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(28, 18, 200, 70); // rear window
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(0, 100, 256, 16);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde68a';
+    ctx.font = 'bold 30px Impact, Arial Black, sans-serif';
+    ctx.fillText('LAL PARI', 128, 152);
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('PUNE ⇄ MUMBAI', 128, 180);
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(18, 200, 220, 34);
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText('KEEP DISTANCE', 128, 223);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // Colourful hanging tassels (jhalar) for trucks
+  createJhalar(width, y, z) {
+    const group = new THREE.Group();
+    const colors = [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899];
+    const geo = new THREE.ConeGeometry(0.06, 0.22, 4);
+    geo.rotateX(Math.PI);
+    const mats = colors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+    const count = Math.round(width / 0.16);
+    for (let i = 0; i < count; i++) {
+      const t = new THREE.Mesh(geo, mats[i % mats.length]);
+      t.position.set(-width / 2 + (i + 0.5) * (width / count), y, z);
+      group.add(t);
+    }
+    return group;
+  }
+
+  // Simple seated driver (used in auto and bike)
+  createDriver(shirtColor = 0xf1f5f9) {
+    const g = new THREE.Group();
+    const skin = new THREE.MeshLambertMaterial({ color: 0x8d5524 });
+    const shirt = new THREE.MeshLambertMaterial({ color: shirtColor });
+    const hair = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.26), shirt);
+    torso.position.y = 0.25;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), skin);
+    head.position.y = 0.66;
+    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.145, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), hair);
+    hairCap.position.y = 0.68;
+    const armGeo = new THREE.BoxGeometry(0.1, 0.1, 0.42);
+    const armL = new THREE.Mesh(armGeo, shirt);
+    armL.position.set(0.22, 0.38, 0.2);
+    const armR = armL.clone();
+    armR.position.x = -0.22;
+    g.add(torso, head, hairCap, armL, armR);
+    return g;
   }
 
   // Generates authentic "HORN OK PLEASE" painted canvas texture
@@ -74,7 +266,7 @@ class VehicleBuilder {
     const matGlass = new THREE.MeshLambertMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.5 });
     const matTire = new THREE.MeshLambertMaterial({ color: 0x111827 });
     const matLight = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-    const matTail = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const matTail = this.makeTailMaterial();
 
     // Lower Cabin Body
     const bodyGeo = new THREE.BoxGeometry(1.4, 0.7, 2.2);
@@ -129,12 +321,55 @@ class VehicleBuilder {
     group.add(light);
 
     // Taillights
-    const tailGeo = new THREE.BoxGeometry(0.2, 0.1, 0.05);
+    const tailGeo = new THREE.BoxGeometry(0.22, 0.12, 0.05);
     const tailL = new THREE.Mesh(tailGeo, matTail);
     tailL.position.set(0.5, 0.65, -1.12);
     const tailR = tailL.clone();
     tailR.position.x = -0.5;
     group.add(tailL, tailR);
+
+    // Painted rear canvas ("OK TATA" + evil eye) - the view players stare at all race long
+    const rearPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.3, 0.62),
+      new THREE.MeshBasicMaterial({ map: this.autoRearTexture })
+    );
+    rearPanel.rotation.y = Math.PI;
+    rearPanel.position.set(0, 1.28, -1.11);
+    group.add(rearPanel);
+
+    // Rear number plate
+    const plate = this.createPlate(options.plate || this.randomPlate(), 0.46, 0.12);
+    plate.rotation.y = Math.PI;
+    plate.position.set(0, 0.48, -1.13);
+    group.add(plate);
+
+    // Black side stripe & chrome rear bumper bar
+    const stripeGeo = new THREE.BoxGeometry(1.42, 0.08, 2.0);
+    const stripe = new THREE.Mesh(stripeGeo, matDark);
+    stripe.position.set(0, 0.85, 0);
+    group.add(stripe);
+    const rearBar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 8), matChrome);
+    rearBar.rotation.z = Math.PI / 2;
+    rearBar.position.set(0, 0.36, -1.2);
+    group.add(rearBar);
+
+    // Front mudguard over the single wheel & handlebar
+    const mudguard = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.34, 0.22, 12, 1, true, 0, Math.PI),
+      matChassis
+    );
+    mudguard.rotation.z = Math.PI / 2;
+    mudguard.position.set(0, 0.3, 1.35);
+    group.add(mudguard);
+    const handlebar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.7, 6), matChrome);
+    handlebar.rotation.z = Math.PI / 2;
+    handlebar.position.set(0, 1.12, 0.62);
+    group.add(handlebar);
+
+    // Driver in khaki uniform
+    const driver = this.createDriver(0xc2a36b);
+    driver.position.set(0, 0.95, 0.25);
+    group.add(driver);
 
     // Wheels (3 Wheels: 1 Front, 2 Rear)
     const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.18, 16);
@@ -152,6 +387,7 @@ class VehicleBuilder {
     group.userData = {
       type: 'auto',
       wheels: [frontWheel, rearWheelL, rearWheelR],
+      brakeMats: [matTail],
       length: 3.2,
       width: 1.6
     };
@@ -231,6 +467,39 @@ class VehicleBuilder {
     tailgate.position.set(0, 2.0, -3.51);
     group.add(tailgate);
 
+    // Tail lamps (brake-reactive), reflector bar & number plate
+    const matTail = this.makeTailMaterial();
+    const truckTailGeo = new THREE.BoxGeometry(0.34, 0.2, 0.06);
+    const tTailL = new THREE.Mesh(truckTailGeo, matTail);
+    tTailL.position.set(0.95, 0.72, -3.63);
+    const tTailR = tTailL.clone();
+    tTailR.position.x = -0.95;
+    group.add(tTailL, tTailR);
+
+    const truckPlate = this.createPlate(options.plate || this.randomPlate(), 0.6, 0.15);
+    truckPlate.rotation.y = Math.PI;
+    truckPlate.position.set(0, 0.72, -3.64);
+    group.add(truckPlate);
+
+    // Rubber mud flaps with painted slogans' colours
+    const flapMat = new THREE.MeshLambertMaterial({ color: 0x111827 });
+    const flapGeo = new THREE.BoxGeometry(0.5, 0.55, 0.03);
+    const flapL = new THREE.Mesh(flapGeo, flapMat);
+    flapL.position.set(1.15, 0.32, -3.0);
+    const flapR = flapL.clone();
+    flapR.position.x = -1.15;
+    group.add(flapL, flapR);
+
+    // Jhalar tassels on front visor and along the tailgate
+    group.add(this.createJhalar(2.3, 2.6, 3.52));
+    group.add(this.createJhalar(2.3, 0.86, -3.56));
+
+    // Nazar battu: black tassel hanging from the rear
+    const nazar = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.35, 6), flapMat);
+    nazar.rotation.x = Math.PI;
+    nazar.position.set(0, 0.35, -3.62);
+    group.add(nazar);
+
     // Heavy Truck Wheels (6 Wheels: 2 Front, 4 Dual Rear)
     const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.32, 16);
     wheelGeo.rotateZ(Math.PI / 2);
@@ -255,6 +524,7 @@ class VehicleBuilder {
     group.userData = {
       type: 'truck',
       wheels: wheels,
+      brakeMats: [matTail],
       length: 7.5,
       width: 2.6
     };
@@ -285,7 +555,7 @@ class VehicleBuilder {
     const matRim = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.75 });
     const matHeadlight = new THREE.MeshBasicMaterial({ color: 0xffffff }); // Bright LED Projector
     const matDRL = new THREE.MeshBasicMaterial({ color: 0xa5f3fc }); // Signature Ice-White DRL
-    const matTail = new THREE.MeshBasicMaterial({ color: 0xef4444 }); // C-shaped LED Tail
+    const matTail = this.makeTailMaterial(); // C-shaped LED Tail (brake-reactive)
     const matReflector = new THREE.MeshBasicMaterial({ color: 0x991b1b });
 
     // Lower Main Body Tub (Aerodynamic Hatchback Profile)
@@ -469,6 +739,11 @@ class VehicleBuilder {
     rearBadge.position.set(0, 0.76, -1.85);
     group.add(rearBadge);
 
+    const swiftPlate = this.createPlate(options.plate || this.randomPlate(), 0.5, 0.12);
+    swiftPlate.rotation.y = Math.PI;
+    swiftPlate.position.set(0, 0.52, -1.87);
+    group.add(swiftPlate);
+
     // Twin Sporty Chrome Exhaust Tips
     const pipeGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.16, 12);
     pipeGeo.rotateX(Math.PI / 2);
@@ -527,6 +802,7 @@ class VehicleBuilder {
     group.userData = {
       type: 'swift',
       wheels: wheels,
+      brakeMats: [matTail],
       length: 3.85,
       width: 1.74
     };
@@ -540,9 +816,248 @@ class VehicleBuilder {
     return root;
   }
 
-  // Alias for backward compatibility
+  // Wrap a +Z-facing group so it faces the direction of travel (-Z)
+  finish(group, userData) {
+    group.userData = userData;
+    const root = new THREE.Group();
+    group.rotation.y = Math.PI;
+    root.add(group);
+    root.userData = group.userData;
+    return root;
+  }
+
+  // 4. HINDUSTAN AMBASSADOR TAXI (Black & yellow Kaali-Peeli)
   createAmbassador(options = {}) {
-    return this.createMarutiSwift(options);
+    const group = new THREE.Group();
+    const matYellow = new THREE.MeshLambertMaterial({ color: options.roofColor || 0xfacc15 });
+    const matBlack = new THREE.MeshLambertMaterial({ color: options.bodyColor || 0x111111 });
+    const matChrome = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.3, metalness: 0.8 });
+    const matGlass = new THREE.MeshLambertMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.55 });
+    const matTire = new THREE.MeshLambertMaterial({ color: 0x111827 });
+    const matHead = new THREE.MeshBasicMaterial({ color: 0xfef9c3 });
+    const matTail = this.makeTailMaterial();
+
+    // Rounded classic body: lower box + bulbous fenders
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 4.1), matBlack);
+    lower.position.y = 0.6;
+    group.add(lower);
+    const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.82, 1.2, 14, 1, false, 0, Math.PI), matBlack);
+    hood.rotation.x = Math.PI / 2;
+    hood.rotation.z = Math.PI / 2;
+    hood.scale.set(1, 1, 0.35);
+    hood.position.set(0, 0.86, 1.4);
+    group.add(hood);
+    const boot = hood.clone();
+    boot.position.z = -1.45;
+    boot.scale.set(1, 0.8, 0.3);
+    group.add(boot);
+
+    // Yellow cabin
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.9), matYellow);
+    cabin.position.set(0, 1.15, -0.1);
+    group.add(cabin);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.12, 1.7), matYellow);
+    roof.position.set(0, 1.47, -0.1);
+    group.add(roof);
+    const glassF = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.42, 0.05), matGlass);
+    glassF.position.set(0, 1.17, 0.86);
+    glassF.rotation.x = -0.35;
+    const glassB = glassF.clone();
+    glassB.position.z = -1.06;
+    glassB.rotation.x = 0.35;
+    group.add(glassF, glassB);
+    const sideGlass = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.36, 1.6), matGlass);
+    sideGlass.position.set(0, 1.18, -0.1);
+    group.add(sideGlass);
+
+    // Roof TAXI sign
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.16, 0.2), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+    sign.position.set(0, 1.62, 0.1);
+    group.add(sign);
+
+    // Chrome grille, bumpers, round headlights
+    const grille = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.05), matChrome);
+    grille.position.set(0, 0.72, 2.06);
+    const bumperF = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.14, 0.14), matChrome);
+    bumperF.position.set(0, 0.42, 2.1);
+    const bumperR = bumperF.clone();
+    bumperR.position.z = -2.1;
+    group.add(grille, bumperF, bumperR);
+    const hlGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.06, 14);
+    hlGeo.rotateX(Math.PI / 2);
+    const hlL = new THREE.Mesh(hlGeo, matHead);
+    hlL.position.set(0.62, 0.78, 2.07);
+    const hlR = hlL.clone();
+    hlR.position.x = -0.62;
+    group.add(hlL, hlR);
+    const tGeo = new THREE.BoxGeometry(0.16, 0.22, 0.05);
+    const tL = new THREE.Mesh(tGeo, matTail);
+    tL.position.set(0.68, 0.72, -2.07);
+    const tR = tL.clone();
+    tR.position.x = -0.68;
+    group.add(tL, tR);
+    const plate = this.createPlate(options.plate || this.randomPlate(), 0.5, 0.12);
+    plate.rotation.y = Math.PI;
+    plate.position.set(0, 0.62, -2.06);
+    group.add(plate);
+
+    const wheels = [];
+    const wGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 14);
+    wGeo.rotateZ(Math.PI / 2);
+    [[0.8, 1.35], [-0.8, 1.35], [0.8, -1.35], [-0.8, -1.35]].forEach(([x, z]) => {
+      const w = new THREE.Mesh(wGeo, matTire);
+      w.position.set(x, 0.33, z);
+      group.add(w);
+      wheels.push(w);
+    });
+
+    return this.finish(group, { type: 'taxi', wheels, brakeMats: [matTail], length: 4.3, width: 1.75 });
+  }
+
+  // 5. ROYAL ENFIELD BULLET (thump-thump highway cruiser)
+  createBullet(options = {}) {
+    const group = new THREE.Group();
+    const tankColor = options.tankColor || [0x111111, 0x7f1d1d, 0x14532d, 0x1e3a8a][Math.floor(Math.random() * 4)];
+    const matTank = new THREE.MeshStandardMaterial({ color: tankColor, roughness: 0.35, metalness: 0.5 });
+    const matChrome = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.25, metalness: 0.9 });
+    const matDark = new THREE.MeshLambertMaterial({ color: 0x1f2937 });
+    const matTire = new THREE.MeshLambertMaterial({ color: 0x111827 });
+    const matHead = new THREE.MeshBasicMaterial({ color: 0xfef9c3 });
+    const matTail = this.makeTailMaterial();
+
+    const wGeo = new THREE.TorusGeometry(0.32, 0.08, 8, 18);
+    wGeo.rotateY(Math.PI / 2);
+    const front = new THREE.Mesh(wGeo, matTire);
+    front.position.set(0, 0.4, 0.75);
+    const rear = new THREE.Mesh(wGeo, matTire);
+    rear.position.set(0, 0.4, -0.72);
+    group.add(front, rear);
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 1.3), matDark);
+    frame.position.set(0, 0.62, 0);
+    frame.rotation.x = -0.08;
+    group.add(frame);
+    const engine = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.32, 0.4), matChrome);
+    engine.position.set(0, 0.52, 0.08);
+    group.add(engine);
+    const tank = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), matTank);
+    tank.scale.set(0.9, 0.75, 1.6);
+    tank.position.set(0, 0.92, 0.22);
+    group.add(tank);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.62), matDark);
+    seat.position.set(0, 0.92, -0.28);
+    group.add(seat);
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.9, 8), matChrome);
+    exhaust.rotation.x = Math.PI / 2 - 0.1;
+    exhaust.position.set(0.2, 0.42, -0.35);
+    group.add(exhaust);
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.75, 6), matChrome);
+    fork.rotation.x = -0.4;
+    fork.position.set(0, 0.78, 0.62);
+    group.add(fork);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.7, 6), matChrome);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, 1.12, 0.48);
+    group.add(bar);
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 12), matHead);
+    lamp.rotation.x = Math.PI / 2;
+    lamp.position.set(0, 1.0, 0.72);
+    group.add(lamp);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.05), matTail);
+    tail.position.set(0, 0.86, -0.72);
+    group.add(tail);
+    const plate = this.createPlate(options.plate || this.randomPlate(), 0.28, 0.08);
+    plate.rotation.y = Math.PI;
+    plate.position.set(0, 0.72, -0.78);
+    group.add(plate);
+
+    // Rider with helmet
+    const rider = this.createDriver([0x1e3a8a, 0x334155, 0x7c2d12, 0xf1f5f9][Math.floor(Math.random() * 4)]);
+    rider.position.set(0, 0.95, -0.12);
+    rider.rotation.x = 0.18;
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
+    helmet.position.set(0, 0.68, 0);
+    rider.add(helmet);
+    group.add(rider);
+
+    return this.finish(group, { type: 'bike', wheels: [front, rear], brakeMats: [matTail], length: 2.1, width: 0.8 });
+  }
+
+  // 6. STATE TRANSPORT BUS (lumbering MSRTC "Lal Pari")
+  createBus(options = {}) {
+    const group = new THREE.Group();
+    const matRed = new THREE.MeshLambertMaterial({ color: 0xb91c1c });
+    const matCream = new THREE.MeshLambertMaterial({ color: 0xfef3c7 });
+    const matSide = new THREE.MeshBasicMaterial({ map: this.busSideTexture });
+    const matGlass = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+    const matTire = new THREE.MeshLambertMaterial({ color: 0x111827 });
+    const matHead = new THREE.MeshBasicMaterial({ color: 0xfef9c3 });
+    const matTail = this.makeTailMaterial();
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.4, 10.5), matRed);
+    body.position.y = 1.85;
+    group.add(body);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.2, 10.2), matCream);
+    roof.position.y = 3.12;
+    group.add(roof);
+    // Roof carrier with luggage bundles
+    const luggageCols = [0x1d4ed8, 0x15803d, 0xa16207, 0x9d174d];
+    for (let i = 0; i < 5; i++) {
+      const bag = new THREE.Mesh(new THREE.BoxGeometry(0.7 + Math.random() * 0.5, 0.35 + Math.random() * 0.3, 0.8),
+        new THREE.MeshLambertMaterial({ color: luggageCols[i % luggageCols.length] }));
+      bag.position.set((Math.random() - 0.5) * 1.2, 3.35, -3 + i * 1.4);
+      group.add(bag);
+    }
+    // Livery side panels
+    const sideGeo = new THREE.PlaneGeometry(10.2, 2.0);
+    const sideL = new THREE.Mesh(sideGeo, matSide);
+    sideL.rotation.y = Math.PI / 2;
+    sideL.position.set(1.26, 2.0, 0);
+    const sideR = new THREE.Mesh(sideGeo, matSide);
+    sideR.rotation.y = -Math.PI / 2;
+    sideR.position.set(-1.26, 2.0, 0);
+    group.add(sideL, sideR);
+    // Windscreen & rear window
+    const wind = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.0, 0.05), matGlass);
+    wind.position.set(0, 2.3, 5.26);
+    group.add(wind);
+    const rearPanel = new THREE.Mesh(new THREE.PlaneGeometry(2.48, 2.38), new THREE.MeshBasicMaterial({ map: this.busRearTexture }));
+    rearPanel.rotation.y = Math.PI;
+    rearPanel.position.set(0, 1.85, -5.26);
+    group.add(rearPanel);
+    // Destination board
+    const dest = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.3, 0.05), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
+    dest.position.set(0, 2.95, 5.27);
+    group.add(dest);
+    const hlGeo = new THREE.BoxGeometry(0.3, 0.2, 0.05);
+    const hlL = new THREE.Mesh(hlGeo, matHead);
+    hlL.position.set(0.9, 0.95, 5.27);
+    const hlR = hlL.clone();
+    hlR.position.x = -0.9;
+    group.add(hlL, hlR);
+    const tGeo = new THREE.BoxGeometry(0.3, 0.3, 0.05);
+    const tL = new THREE.Mesh(tGeo, matTail);
+    tL.position.set(0.95, 0.85, -5.28);
+    const tR = tL.clone();
+    tR.position.x = -0.95;
+    group.add(tL, tR);
+    const plate = this.createPlate(options.plate || this.randomPlate(), 0.6, 0.15);
+    plate.rotation.y = Math.PI;
+    plate.position.set(0, 0.85, -5.28);
+    group.add(plate);
+    group.add(this.createJhalar(2.3, 2.85, 5.3));
+
+    const wheels = [];
+    const wGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.34, 14);
+    wGeo.rotateZ(Math.PI / 2);
+    [[1.15, 3.4], [-1.15, 3.4], [1.15, -3.2], [-1.15, -3.2]].forEach(([x, z]) => {
+      const w = new THREE.Mesh(wGeo, matTire);
+      w.position.set(x, 0.52, z);
+      group.add(w);
+      wheels.push(w);
+    });
+
+    return this.finish(group, { type: 'bus', wheels, brakeMats: [matTail], length: 10.6, width: 2.6 });
   }
 }
 

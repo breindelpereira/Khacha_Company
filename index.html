@@ -7,17 +7,21 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Khacha Company | Desi Highway Racer</title>
-  <link rel="stylesheet" href="style.css?v=2.3">
+  <link rel="stylesheet" href="style.css?v=3.0">
   <!-- Google Fonts for sleek & stylish typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&family=Teko:wght@500;700&display=swap" rel="stylesheet">
   <!-- Three.js from CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="assets/vendor/three.min.js"></script>
 </head>
 <body>
   <!-- 3D Canvas Container -->
   <div id="game-container"></div>
+
+  <!-- Speed lines & screen effects (driven by speed / nitro) -->
+  <div id="speed-lines" class="speed-lines" aria-hidden="true"></div>
+  <div class="slowmo-vignette" aria-hidden="true"></div>
 
   <!-- HUD Overlay -->
   <div id="hud" class="hud-layer hidden">
@@ -56,11 +60,15 @@
       <div class="biome-pill" id="hud-biome-badge">🌅 RURAL FOOTHILLS &bull; GOLDEN SUNSET</div>
     </div>
 
-    <!-- Center Flow & Near Miss Notification -->
-    <div id="flow-toast" class="flow-toast">
-      <span class="flow-badge">NEAR MISS</span>
-      <span class="flow-points">+250 PTS</span>
+    <!-- Highway Orders (per-run missions) -->
+    <div class="missions-panel">
+      <span class="missions-title">📋 HIGHWAY ORDERS <small>+3s each</small></span>
+      <ul id="mission-list" class="mission-list"></ul>
     </div>
+
+    <!-- Floating score popups -->
+    <div id="popups" class="popups" aria-live="polite"></div>
+    <div id="slip-badge" class="slip-badge">💨 SLIPSTREAM • CHARGING</div>
 
     <!-- FASTag Electronic Toll Cleared Toast Notification -->
     <div id="fastag-toast" class="fastag-toast">
@@ -108,7 +116,14 @@
           </div>
         </div>
         <div class="streak-pill" id="hud-streak-pill">FLOW STREAK x1</div>
+        <div class="combo-track"><div class="combo-bar" id="combo-bar"></div></div>
       </div>
+
+      <!-- Khacha Meter: fills from near-misses, overtakes, slipstream; fire with SHIFT -->
+      <button class="khacha-meter" id="khacha-meter" type="button" title="Fire nitro [SHIFT / N / Gamepad Y]">
+        <span class="meter-label" id="khacha-meter-label">KHACHA METER</span>
+        <span class="meter-track"><span class="meter-fill" id="khacha-meter-fill"></span></span>
+      </button>
 
       <!-- Horn & Controls Action -->
       <div class="action-controls">
@@ -120,7 +135,7 @@
           </div>
         </div>
         <div class="control-hints">
-          <span>[W/A/S/D] or [ARROWS] Drive &bull; [SPACE] Horn</span>
+          <span>[W/A/S/D] or [ARROWS] Drive &bull; [SPACE] Horn &bull; [SHIFT] Nitro</span>
           <span>[P / ESC] Pause &bull; [1, 2, 3 / V] Switch Rides</span>
           <span>[C] Camera &bull; [R] Reset</span>
         </div>
@@ -142,6 +157,8 @@
         <div class="feat-tag">🌙 Dynamic Night & Neon Atmosphere</div>
         <div class="feat-tag">🛣️ Changing NH-44 Biomes</div>
         <div class="feat-tag">⚡ Sting & Vimal Power-Ups</div>
+        <div class="feat-tag">🔥 Khacha Nitro: Smash Through Traffic</div>
+        <div class="feat-tag">📋 Highway Orders Every Run</div>
       </div>
 
       <!-- Vehicle Selector -->
@@ -203,6 +220,22 @@
         <div class="challan-row">
           <span>CLEAN NEAR-MISSES</span>
           <strong id="final-nearmiss">0</strong>
+        </div>
+        <div class="challan-row">
+          <span>OVERTAKES</span>
+          <strong id="final-overtakes">0</strong>
+        </div>
+        <div class="challan-row">
+          <span>KHACHA SMASHES</span>
+          <strong id="final-smashes">0</strong>
+        </div>
+        <div class="challan-row">
+          <span>BEST FLOW STREAK</span>
+          <strong id="final-streak">x1</strong>
+        </div>
+        <div class="challan-row">
+          <span>HIGHWAY ORDERS DONE</span>
+          <strong id="final-orders">0 / 3</strong>
         </div>
         <div class="challan-row">
           <span>HORNS HONKED</span>
@@ -289,11 +322,12 @@
   </div>
 
   <!-- Game Scripts (Cache-busted) -->
-  <script src="js/audio.js?v=2.3"></script>
-  <script src="js/vehicles.js?v=2.3"></script>
-  <script src="js/scenery.js?v=2.3"></script>
-  <script src="js/road.js?v=2.3"></script>
-  <script src="js/physics.js?v=2.3"></script>
-  <script src="js/main.js?v=2.3"></script>
+  <script src="js/audio.js?v=3.0"></script>
+  <script src="js/vehicles.js?v=3.0"></script>
+  <script src="js/scenery.js?v=3.0"></script>
+  <script src="js/road.js?v=3.0"></script>
+  <script src="js/missions.js?v=3.0"></script>
+  <script src="js/physics.js?v=3.0"></script>
+  <script src="js/main.js?v=3.0"></script>
 </body>
 </html>

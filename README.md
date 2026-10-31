@@ -15,7 +15,9 @@ From a terminal in this directory:
 ./run.sh
 ```
 
-You can also double-click `run.sh` in a Linux file manager configured to run shell files. The launcher prefers `uv` and uses `python3` automatically when uv is unavailable. It starts a local server at `http://localhost:8080/` and opens the game in your default browser.
+You can also double-click `run.sh` in a Linux file manager configured to run shell files. The launcher prefers `uv` and uses `python3` automatically when uv is unavailable. It starts a local server at `http://localhost:8080/` (or the next free port) and opens the game in your default browser. The server only listens on `127.0.0.1`.
+
+Optional environment variables: `KHACHA_PORT` (start port), `KHACHA_HOST` (bind address), `KHACHA_NO_BROWSER=1` (don't open a browser).
 
 ### Other launch options
 
@@ -30,7 +32,7 @@ python3 server.py
 npx serve .
 ```
 
-> Use an HTTP server for full meme voice playback. The WAV files are fetched from `assets/audio/`, and Three.js still loads from its CDN.
+> Use an HTTP server for full meme voice playback. The WAV files are fetched from `assets/audio/`. Three.js r128 is vendored in `assets/vendor/`, so the game runs offline (only the Google Fonts are remote, with system-font fallbacks).
 
 ---
 
@@ -42,10 +44,18 @@ npx serve .
 | **Accelerate** | `W` or `Up` Arrow | Right Trigger (RT) / `A` Button |
 | **Brake / Reverse** | `S` or `Down` Arrow | Left Trigger (LT) / `B` Button |
 | **Desi Musical Horn** | `Spacebar` or `H` | `X` Button / Right Bumper |
+| **Khacha Nitro** (when meter is full) | `Shift` or `N` (or tap the meter) | `Y` Button |
 | **Change Ride** | `1` (Auto) / `2` (Swift) / `3` (Truck) / `V` | Left Bumper (LB) |
-| **Pause Game** | `P` or `Esc` | Menu / Start Button |
+| **Pause Game** | `P` or `Esc` (auto-pauses when you switch tabs) | Menu / Start Button |
 | **Change Camera View** | `C` (Chase, Hood, High-Angle) | - |
 | **Quick Restart** | `R` | - |
+
+## 🔥 How to Score Big
+
+- **Near-misses build your Flow Streak** (up to **x8**). Every near-miss multiplies its points by the streak, but you have **4.5 seconds** to chain the next one before the combo drops. Watch the bar under the streak pill.
+- **Chain a x4+ near-miss** for a split-second **slow-mo** moment.
+- **Khacha Meter** fills from near-misses, overtakes, power-ups, FASTag lanes and **slipstreaming** (tuck in right behind a vehicle for a small speed tow). When it glows, hit `Shift` for **KHACHA NITRO**: +45% top speed, and you **smash traffic and barricades out of the way** for bonus points instead of crashing. Toll booth pillars will still stop you.
+- **Highway Orders:** every run deals three random missions (near-misses, overtakes, smashes, top speed, slipstream time, distance...). Each one completed is worth **+3 seconds and +1,000 points**.
 
 ## 🔊 Meme Voice Rewards
 
@@ -70,7 +80,7 @@ npx serve .
 
 ## 🎪 Key Features
 
-1. **Realistic Reactive Traffic AI:**
+1. **Realistic Reactive Traffic AI** with six vehicle types: Tata trucks (with jhalar tassels & mud flaps), Maruti Swifts, kaali-peeli Ambassador taxis, auto-rickshaws ("OK TATA" rear canvas), Royal Enfield Bullets and MSRTC "Lal Pari" buses. Brake lights glow when anyone slows down:
    * AI vehicles autonomously overtake slower vehicles in front of them.
    * Mischievous drivers cut off the player, squeeze passing corridors, or brake-check at high speeds.
    * Full 3D steering yaw into turns and natural road wobble.
@@ -78,10 +88,10 @@ npx serve .
    * Honking sends a visible shockwave; panic-swerves autos and slow trucks into outer lanes.
 3. **Attract Mode (Screensaver):**
    * Automatically enters autopilot cruise with a cinematic orbiting camera when idle.
-4. **90-Second Event Rush:**
-   * High-intensity time-attack format with clutch power-up extensions.
+4. **40-Second Sprint:**
+   * High-intensity time-attack format; power-ups and completed Highway Orders extend the clock (up to 99s).
 5. **E-Challan / Trip Receipt:**
-   * Detailed performance scorecard at the end of each run with local high-score tracking.
+   * Scorecard with overtakes, smashes, best streak and Highway Orders, plus local high-score tracking.
 6. **Cultural Authenticity:**
    * Hand-painted *"HORN OK PLEASE"* truck tailgates with *"⚡ KHACHA COMPANY EXPRESS ⚡"*.
    * Roadside Dhabas, Western Ghats silhouettes, yellow-and-white milestones, and peaceful Indie dogs lounging in the gravel shoulder.

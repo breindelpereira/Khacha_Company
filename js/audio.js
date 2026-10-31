@@ -246,6 +246,89 @@ class SoundEngine {
     subOsc.stop(now + 0.32);
   }
 
+  // Short filtered white-noise burst shared by whoosh/impact effects
+  noiseBurst(duration, filterType, f0, f1, gainValue, q = 1) {
+    const now = this.ctx.currentTime;
+    const size = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+    const buffer = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = filterType;
+    filter.Q.setValueAtTime(q, now);
+    filter.frequency.setValueAtTime(f0, now);
+    filter.frequency.exponentialRampToValueAtTime(f1, now + duration);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(gainValue, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.getOutput());
+    src.start(now);
+  }
+
+  // Rocket-whoosh + rising saw for the Khacha Nitro
+  playNitro() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.noiseBurst(0.9, 'bandpass', 300, 3200, 0.5, 2);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(90, now);
+    osc.frequency.exponentialRampToValueAtTime(420, now + 0.6);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    osc.connect(gain);
+    gain.connect(this.getOutput());
+    osc.start(now);
+    osc.stop(now + 0.72);
+  }
+
+  // Meaty thump + metallic crunch when nitro rams traffic aside
+  playSmash() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.noiseBurst(0.35, 'lowpass', 2400, 200, 0.6, 1);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    osc.connect(gain);
+    gain.connect(this.getOutput());
+    osc.start(now);
+    osc.stop(now + 0.3);
+  }
+
+  // Festive tabla-ish arpeggio when a Highway Order is completed
+  playMissionComplete() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Raag Bilawal-ish rising phrase: Sa Ga Pa Sa'
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, i) => {
+      const t = now + i * 0.07;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.14, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain);
+      gain.connect(this.getOutput());
+      osc.start(t);
+      osc.stop(t + 0.27);
+    });
+  }
+
   stopEngine() {
     if (!this.isEngineRunning) return;
     try {

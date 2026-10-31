@@ -1,16 +1,41 @@
 // Master Game Coordinator for NH Odyssey (Desi Highway Racer)
 // Manages Three.js scene, lighting, camera rigs, input, and game state transitions
 
+const SESSION_SECONDS = 40;   // base sprint length
+const MAX_SESSION_SECONDS = 99;
+
 class Game {
   constructor() {
     this.container = document.getElementById('game-container');
     this.state = 'ATTRACT'; // ATTRACT | PLAYING | CRASH | GAMEOVER
-    this.sessionTimer = 40; // 40-second high-intensity sprint
+    this.sessionTimer = SESSION_SECONDS; // high-intensity sprint
     this.crashTimer = 0;
     this.autoResetTimer = 12;
     this.cameraMode = 0; // 0: Smooth Chase, 1: Close Hood, 2: Far Cinematic
     this.highScore = parseInt(localStorage.getItem('khacha_best') || localStorage.getItem('nh_odyssey_best') || '0', 10);
     this.lastRewardMilestone = 0;
+    this.shake = 0;          // camera shake magnitude (decays)
+    this.timeScale = 1;      // slow-motion factor for big near-misses
+    this.slowMoTimer = 0;
+    this.prevPad = [];       // previous gamepad button states for edge detection
+    this.missions = new window.MissionTracker();
+
+    // Reusable scratch objects (avoid per-frame allocations)
+    this._tmpVec = new THREE.Vector3();
+    this._skyCol = new THREE.Color();
+    this._sunCol = new THREE.Color();
+    this._hemiSky = new THREE.Color();
+    this._hemiGround = new THREE.Color();
+    this._palette = {
+      sunsetSky: new THREE.Color(0xd99b66), purple: new THREE.Color(0x9333ea),
+      sunGold: new THREE.Color(0xffbe76), rose: new THREE.Color(0xf43f5e),
+      hemiWarm: new THREE.Color(0xffeedd), lavender: new THREE.Color(0xa78bfa),
+      groundWarm: new THREE.Color(0x8a6344), indigo: new THREE.Color(0x312e81),
+      duskSky: new THREE.Color(0x6b21a8), nightSky: new THREE.Color(0x1e1b4b),
+      sky: new THREE.Color(0x38bdf8), hemiDusk: new THREE.Color(0x818cf8),
+      slate: new THREE.Color(0x1e293b), deepNavy: new THREE.Color(0x0f172a),
+      midnight: new THREE.Color(0x070b14)
+    };
 
     // Input State
     this.input = {
@@ -34,7 +59,6 @@ class Game {
       hudStreakPill: document.getElementById('hud-streak-pill'),
       speedoFill: document.getElementById('speedo-fill'),
       hornBtn: document.getElementById('horn-btn'),
-      flowToast: document.getElementById('flow-toast'),
       attractOverlay: document.getElementById('attract-overlay'),
       startBtn: document.getElementById('start-btn'),
       gameoverOverlay: document.getElementById('gameover-overlay'),
@@ -60,7 +84,19 @@ class Game {
       hudBiomeBadge: document.getElementById('hud-biome-badge'),
       fastagToast: document.getElementById('fastag-toast'),
       soundToggle: document.getElementById('sound-toggle'),
-      memeToggle: document.getElementById('meme-toggle')
+      memeToggle: document.getElementById('meme-toggle'),
+      popups: document.getElementById('popups'),
+      meterFill: document.getElementById('khacha-meter-fill'),
+      meterBox: document.getElementById('khacha-meter'),
+      meterLabel: document.getElementById('khacha-meter-label'),
+      comboBar: document.getElementById('combo-bar'),
+      speedLines: document.getElementById('speed-lines'),
+      missionList: document.getElementById('mission-list'),
+      slipBadge: document.getElementById('slip-badge'),
+      finalOvertakes: document.getElementById('final-overtakes'),
+      finalSmashes: document.getElementById('final-smashes'),
+      finalStreak: document.getElementById('final-streak'),
+      finalOrders: document.getElementById('final-orders')
     };
 
     this.selectedVehicle = 'auto';
@@ -153,12 +189,12 @@ class Game {
   initParticles() {
     this.particles = [];
     const geo = new THREE.SphereGeometry(0.18, 6, 6);
-    for (let i = 0; i < 35; i++) {
+    for (let i = 0; i < 90; i++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0xd1d5db, transparent: true, opacity: 0.5 });
       const p = new THREE.Mesh(geo, mat);
       p.visible = false;
       this.scene.add(p);
-      this.particles.push({ mesh: p, life: 0, maxLife: 0.6, vx: 0, vy: 0, vz: 0 });
+      this.particles.push({ mesh: p, life: 0, maxLife: 0.6, vx: 0, vy: 0, vz: 0, gravity: 0, grow: 2.2, baseOpacity: 0.45 });
     }
   }
 
@@ -183,17 +219,44 @@ class Game {
     p.vx = (Math.random() - 0.5) * 0.4;
     p.vy = 0.35 + Math.random() * 0.4;
     p.vz = 1.2 + Math.random() * 0.6;
+    p.gravity = 0;
+    p.grow = 2.2;
+    p.baseOpacity = isBoost ? 0.95 : 0.45;
+  }
+
+  // Burst of sparks / debris (crash, smash, mission complete)
+  emitBurst(pos, count, color, speed = 8) {
+    for (let i = 0; i < count; i++) {
+      const p = this.particles.find(pt => pt.life <= 0);
+      if (!p) return;
+      p.mesh.position.set(pos.x, pos.y + 0.8, pos.z);
+      p.mesh.scale.setScalar(0.5 + Math.random() * 0.5);
+      p.mesh.material.color.setHex(color);
+      p.mesh.material.opacity = 1;
+      p.mesh.visible = true;
+      p.life = 0.5 + Math.random() * 0.4;
+      p.maxLife = p.life;
+      const a = Math.random() * Math.PI * 2;
+      const s = speed * (0.4 + Math.random() * 0.6);
+      p.vx = Math.cos(a) * s;
+      p.vz = Math.sin(a) * s;
+      p.vy = 2 + Math.random() * speed * 0.8;
+      p.gravity = 18;
+      p.grow = -0.8;
+      p.baseOpacity = 1;
+    }
   }
 
   updateParticles(delta) {
     this.particles.forEach(p => {
       if (p.life > 0) {
         p.life -= delta;
+        p.vy -= p.gravity * delta;
         p.mesh.position.x += p.vx * delta;
         p.mesh.position.y += p.vy * delta;
         p.mesh.position.z += p.vz * delta;
-        p.mesh.scale.multiplyScalar(1.0 + delta * 2.2);
-        p.mesh.material.opacity = (p.life / p.maxLife) * 0.45;
+        p.mesh.scale.multiplyScalar(Math.max(0.05, 1.0 + delta * p.grow));
+        p.mesh.material.opacity = (p.life / p.maxLife) * p.baseOpacity;
         if (p.life <= 0) p.mesh.visible = false;
       }
     });
@@ -233,11 +296,16 @@ class Game {
     this.dom.startBtn.addEventListener('click', () => this.startGame());
     this.dom.restartBtn.addEventListener('click', () => this.startGame());
 
-    this.dom.hornBtn.addEventListener('mousedown', () => this.triggerHorn());
-    this.dom.hornBtn.addEventListener('touchstart', (e) => {
+    this.dom.hornBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.triggerHorn();
     });
+    if (this.dom.meterBox) {
+      this.dom.meterBox.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.triggerNitro();
+      });
+    }
 
     // Pause / Resume Handlers
     if (this.dom.pauseBtn) {
@@ -307,9 +375,14 @@ class Game {
       }
     });
 
+    // Auto-pause when the tab is hidden or the window loses focus
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) window.soundEngine.stopReward();
+      if (document.hidden) {
+        window.soundEngine.stopReward();
+        this.pauseGame();
+      }
     });
+    window.addEventListener('blur', () => this.pauseGame());
 
     // Keep retrying on user gestures if the browser initially blocks audio.
     const activateAudio = () => {
@@ -342,6 +415,7 @@ class Game {
   pauseGame() {
     if (this.state !== 'PLAYING') return;
     this.state = 'PAUSED';
+    this.clearInput();
     window.soundEngine.stopEngine();
     window.soundEngine.stopReward();
     this.dom.pauseOverlay.classList.remove('hidden');
@@ -362,6 +436,11 @@ class Game {
     this.dom.pauseOverlay.classList.add('hidden');
     this.clock.getDelta(); // flush any accumulated delta so no physics jump!
     window.soundEngine.startEngine();
+  }
+
+  // Release every held control (prevents stuck keys after pause/blur)
+  clearInput() {
+    Object.keys(this.input).forEach(k => { this.input[k] = false; });
   }
 
   togglePause() {
@@ -416,6 +495,12 @@ class Game {
   }
 
   handleInput(code, isPressed) {
+    // 0. Key releases always clear held controls, whatever the game state
+    if (!isPressed) {
+      this.applyDriveKey(code, false);
+      return;
+    }
+
     // 1. Vehicle selection hotkeys work anytime (Attract, Playing, Paused, or Game Over)
     if (isPressed) {
       if (code === 'Digit1' || code === 'Numpad1') {
@@ -471,6 +556,28 @@ class Game {
     }
 
     switch (code) {
+      case 'ShiftLeft':
+      case 'ShiftRight':
+      case 'KeyN':
+        this.triggerNitro();
+        break;
+      case 'KeyC':
+        this.cameraMode = (this.cameraMode + 1) % 3;
+        break;
+      case 'KeyR':
+        if (this.state === 'PLAYING' || this.state === 'PAUSED') {
+          this.dom.pauseOverlay.classList.add('hidden');
+          this.startGame();
+        }
+        break;
+      default:
+        this.applyDriveKey(code, true);
+    }
+  }
+
+  // Held driving controls (throttle, brake, steer, horn)
+  applyDriveKey(code, isPressed) {
+    switch (code) {
       case 'KeyW':
       case 'ArrowUp':
         this.input.up = isPressed;
@@ -496,17 +603,6 @@ class Game {
         }
         this.input.horn = isPressed;
         break;
-      case 'KeyC':
-        if (isPressed) {
-          this.cameraMode = (this.cameraMode + 1) % 3;
-        }
-        break;
-      case 'KeyR':
-        if (isPressed && (this.state === 'PLAYING' || this.state === 'PAUSED')) {
-          this.dom.pauseOverlay.classList.add('hidden');
-          this.startGame();
-        }
-        break;
     }
   }
 
@@ -515,56 +611,138 @@ class Game {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     if (!gamepads || !gamepads[0]) return;
     const gp = gamepads[0];
+    const pressed = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+    // Edge detection: true only on the frame a button goes down
+    const justPressed = i => pressed(i) && !this.prevPad[i];
+    const finish = () => { this.prevPad = gp.buttons.map(b => b.pressed); };
 
-    // Gamepad Menu/Start button (button 9) for Pause toggle
-    if (gp.buttons[9]?.pressed && !this.menuBtnPressed) {
-      this.togglePause();
-      this.menuBtnPressed = true;
-    } else if (!gp.buttons[9]?.pressed) {
-      this.menuBtnPressed = false;
+    // Menu/Start button (9) toggles pause
+    if (justPressed(9)) {
+      if (this.state === 'ATTRACT' || this.state === 'GAMEOVER') this.startGame();
+      else this.togglePause();
+      return finish();
     }
 
-    // If Paused, A button resumes
+    // If Paused, a fresh A press resumes
     if (this.state === 'PAUSED') {
-      if (gp.buttons[0]?.pressed) {
-        this.resumeGame();
-      }
-      return;
+      if (justPressed(0)) this.resumeGame();
+      return finish();
     }
 
-    // Trigger button or A button to start from attract
-    if (this.state === 'ATTRACT' && (gp.buttons[0]?.pressed || gp.buttons[9]?.pressed)) {
+    // A starts from attract / game-over screens
+    if ((this.state === 'ATTRACT' || this.state === 'GAMEOVER') && justPressed(0)) {
       this.startGame();
-      return;
+      return finish();
     }
 
     // Left Stick / D-pad
     const stickX = gp.axes[0] || 0;
-    this.input.left = stickX < -0.2 || gp.buttons[14]?.pressed;
-    this.input.right = stickX > 0.2 || gp.buttons[15]?.pressed;
+    this.input.left = stickX < -0.2 || pressed(14);
+    this.input.right = stickX > 0.2 || pressed(15);
 
-    // Trigger / Gas (Right Trigger or A button)
-    const rt = gp.buttons[7]?.value || (gp.buttons[0]?.pressed ? 1 : 0);
-    this.input.up = rt > 0.1 || gp.buttons[12]?.pressed;
+    // Gas (Right Trigger or A button)
+    const rt = (gp.buttons[7] && gp.buttons[7].value) || (pressed(0) ? 1 : 0);
+    this.input.up = rt > 0.1 || pressed(12);
 
     // Brake (Left Trigger or B button)
-    const lt = gp.buttons[6]?.value || (gp.buttons[1]?.pressed ? 1 : 0);
-    this.input.down = lt > 0.1 || gp.buttons[13]?.pressed;
+    const lt = (gp.buttons[6] && gp.buttons[6].value) || (pressed(1) ? 1 : 0);
+    this.input.down = lt > 0.1 || pressed(13);
 
     // Horn (X button or RB)
-    if ((gp.buttons[2]?.pressed || gp.buttons[5]?.pressed) && !this.input.horn) {
-      this.triggerHorn();
-      this.input.horn = true;
-    } else if (!gp.buttons[2]?.pressed && !gp.buttons[5]?.pressed) {
-      this.input.horn = false;
-    }
+    if ((justPressed(2) || justPressed(5)) && this.state === 'PLAYING') this.triggerHorn();
+    this.input.horn = pressed(2) || pressed(5);
+
+    // Nitro (Y button)
+    if (justPressed(3)) this.triggerNitro();
 
     // Cycle vehicle with LB (button 4)
-    if (gp.buttons[4]?.pressed && !this.bumperPressed) {
-      this.cycleVehicle();
-      this.bumperPressed = true;
-    } else if (!gp.buttons[4]?.pressed) {
-      this.bumperPressed = false;
+    if (justPressed(4)) this.cycleVehicle();
+
+    finish();
+  }
+
+  triggerNitro() {
+    if (this.state !== 'PLAYING') return;
+    if (!this.traffic.activateNitro()) {
+      // Not charged yet: wiggle the meter as feedback
+      if (this.dom.meterBox) {
+        this.dom.meterBox.classList.remove('denied');
+        void this.dom.meterBox.offsetWidth;
+        this.dom.meterBox.classList.add('denied');
+      }
+      return;
+    }
+    window.soundEngine.playNitro();
+    this.addShake(0.35);
+    this.spawnPopup('KHACHA NITRO!', 'nitro');
+    document.body.classList.add('nitro-flash');
+    clearTimeout(this.nitroFlashTimeout);
+    this.nitroFlashTimeout = setTimeout(() => document.body.classList.remove('nitro-flash'), 450);
+  }
+
+  addShake(amount) {
+    this.shake = Math.min(1.2, Math.max(this.shake, amount));
+  }
+
+  // Floating text popup in the middle of the screen
+  spawnPopup(text, kind = 'nearmiss') {
+    const host = this.dom.popups;
+    if (!host) return;
+    while (host.childElementCount > 5) host.firstElementChild.remove();
+    const el = document.createElement('div');
+    el.className = `popup popup-${kind}`;
+    el.textContent = text;
+    el.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 120)}px`);
+    host.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  }
+
+  startSlowMo(duration = 0.45, scale = 0.35) {
+    this.timeScale = scale;
+    this.slowMoTimer = duration;
+    document.body.classList.add('slowmo');
+  }
+
+  renderMissions() {
+    const list = this.dom.missionList;
+    if (!list) return;
+    list.innerHTML = '';
+    this.missions.missions.forEach(m => {
+      const li = document.createElement('li');
+      li.className = m.done ? 'done' : '';
+      const label = document.createElement('span');
+      label.className = 'm-label';
+      label.textContent = m.label;
+      const prog = document.createElement('span');
+      prog.className = 'm-prog';
+      prog.textContent = m.done ? '✔' : this.formatProgress(m);
+      li.append(label, prog);
+      list.appendChild(li);
+    });
+  }
+
+  formatProgress(m) {
+    if (m.stat === 'distanceCovered') return `${(m.progress / 1000).toFixed(2)}/${(m.target / 1000).toFixed(1)} km`;
+    if (m.stat === 'slipstreamTime') return `${m.progress.toFixed(1)}/${m.target}s`;
+    return `${Math.floor(m.progress)}/${m.target}`;
+  }
+
+  updateMissions() {
+    const t = this.traffic;
+    const completed = this.missions.update(t);
+    if (completed.length) {
+      completed.forEach(m => {
+        this.sessionTimer = Math.min(this.sessionTimer + window.MISSION_REWARD_SECONDS, MAX_SESSION_SECONDS);
+        t.score += window.MISSION_REWARD_POINTS;
+        this.spawnPopup(`ORDER DONE: ${m.label.toUpperCase()} +${window.MISSION_REWARD_SECONDS}s`, 'mission');
+        window.soundEngine.playMissionComplete();
+        this.emitBurst(t.player.position, 18, 0x22c55e, 6);
+      });
+      this.renderMissions();
+    } else if (!this._missionTick || this._missionTick++ > 10) {
+      // Refresh progress counters a few times a second
+      this._missionTick = 1;
+      this.renderMissions();
     }
   }
 
@@ -592,15 +770,26 @@ class Game {
     window.soundEngine.startEngine();
 
     this.state = 'PLAYING';
-    this.sessionTimer = 40;
+    this.sessionTimer = SESSION_SECONDS;
     this.crashTimer = 0;
     this.lastRewardMilestone = 0;
+    this.shake = 0;
+    this.timeScale = 1;
+    this.slowMoTimer = 0;
+    this.clearInput();
+    document.body.classList.remove('slowmo', 'nitro-flash');
+    if (this.dom.popups) this.dom.popups.innerHTML = '';
 
     // Reset road chunks cleanly to starting line (z = 0)
     this.road.reset(0);
 
     // Reset traffic & player to z = 0 with 2.5s invulnerability grace period
     this.traffic.reset(0, this.selectedVehicle);
+
+    // Fresh set of Highway Orders for this run
+    this.missions.pick(Math.round(this.traffic.playerMaxSpeed * 3.6));
+    this._missionTick = 0;
+    this.renderMissions();
 
     // Reset camera position directly behind fresh player
     if (this.traffic.player) {
@@ -627,6 +816,12 @@ class Game {
   triggerCrash() {
     this.state = 'CRASH';
     this.crashTimer = 1.8;
+    this.timeScale = 1;
+    this.slowMoTimer = 0;
+    document.body.classList.remove('slowmo');
+    this.addShake(1.2);
+    this.emitBurst(this.traffic.player.position, 40, 0xfb923c, 10);
+    this.emitBurst(this.traffic.player.position, 12, 0x374151, 6);
     window.soundEngine.playCrash();
     window.soundEngine.stopEngine();
     window.soundEngine.stopReward();
@@ -650,6 +845,10 @@ class Game {
     this.dom.finalSpeed.innerText = this.traffic.topSpeedKmh + ' KM/H';
     this.dom.finalNearmiss.innerText = this.traffic.nearMissCount;
     this.dom.finalHorns.innerText = this.traffic.hornCount;
+    if (this.dom.finalOvertakes) this.dom.finalOvertakes.innerText = this.traffic.overtakeCount;
+    if (this.dom.finalSmashes) this.dom.finalSmashes.innerText = this.traffic.smashCount;
+    if (this.dom.finalStreak) this.dom.finalStreak.innerText = 'x' + this.traffic.bestStreak;
+    if (this.dom.finalOrders) this.dom.finalOrders.innerText = `${this.missions.doneCount} / ${this.missions.missions.length}`;
     this.dom.finalScore.innerText = finalScore.toLocaleString();
     this.dom.finalBest.innerText = this.highScore.toLocaleString();
 
@@ -674,14 +873,8 @@ class Game {
 
     this.dom.hud.classList.add('hidden');
     this.dom.gameoverOverlay.classList.remove('hidden');
-  }
-
-  showNearMissToast() {
-    this.dom.flowToast.classList.add('active');
-    clearTimeout(this.toastTimeout);
-    this.toastTimeout = setTimeout(() => {
-      this.dom.flowToast.classList.remove('active');
-    }, 900);
+    document.body.classList.remove('slowmo', 'nitro-flash');
+    if (this.dom.speedLines) this.dom.speedLines.style.opacity = 0;
   }
 
   showChaiToast(type = this.selectedVehicle, bonus = 8) {
@@ -726,38 +919,39 @@ class Game {
     const playerPos = this.traffic.player.position;
     const dist = Math.abs(playerZ);
 
-    let skyCol = new THREE.Color();
-    let sunCol = new THREE.Color();
+    const P = this._palette;
+    const skyCol = this._skyCol;
+    const sunCol = this._sunCol;
     let sunIntensity = 1.4;
-    let hemiSky = new THREE.Color();
-    let hemiGround = new THREE.Color();
+    const hemiSky = this._hemiSky;
+    const hemiGround = this._hemiGround;
     let headIntensity = 0.5;
     let underglowIntensity = 0.4;
     let badgeText = '';
 
     if (dist < 180) {
       const t = dist / 180;
-      skyCol.lerpColors(new THREE.Color(0xd99b66), new THREE.Color(0x9333ea), t * 0.7);
-      sunCol.lerpColors(new THREE.Color(0xffbe76), new THREE.Color(0xf43f5e), t);
+      skyCol.lerpColors(P.sunsetSky, P.purple, t * 0.7);
+      sunCol.lerpColors(P.sunGold, P.rose, t);
       sunIntensity = THREE.MathUtils.lerp(1.4, 0.85, t);
-      hemiSky.lerpColors(new THREE.Color(0xffeedd), new THREE.Color(0xa78bfa), t);
-      hemiGround.lerpColors(new THREE.Color(0x8a6344), new THREE.Color(0x312e81), t);
+      hemiSky.lerpColors(P.hemiWarm, P.lavender, t);
+      hemiGround.lerpColors(P.groundWarm, P.indigo, t);
       headIntensity = THREE.MathUtils.lerp(0.4, 1.4, t);
       underglowIntensity = THREE.MathUtils.lerp(0.2, 1.0, t);
       badgeText = '🌅 RURAL FOOTHILLS • GOLDEN SUNSET';
     } else if (dist < 480) {
       const t = (dist - 180) / 300;
-      skyCol.lerpColors(new THREE.Color(0x6b21a8), new THREE.Color(0x1e1b4b), t);
-      sunCol.lerpColors(new THREE.Color(0xf43f5e), new THREE.Color(0x38bdf8), t);
+      skyCol.lerpColors(P.duskSky, P.nightSky, t);
+      sunCol.lerpColors(P.rose, P.sky, t);
       sunIntensity = THREE.MathUtils.lerp(0.85, 0.35, t);
-      hemiSky.lerpColors(new THREE.Color(0x818cf8), new THREE.Color(0x1e293b), t);
-      hemiGround.lerpColors(new THREE.Color(0x312e81), new THREE.Color(0x0f172a), t);
+      hemiSky.lerpColors(P.hemiDusk, P.slate, t);
+      hemiGround.lerpColors(P.indigo, P.deepNavy, t);
       headIntensity = THREE.MathUtils.lerp(1.4, 2.4, t);
       underglowIntensity = THREE.MathUtils.lerp(1.0, 2.0, t);
       badgeText = '🌆 EXPRESSWAY CORRIDOR • DUSK TWILIGHT';
     } else {
       const t = Math.min((dist - 480) / 240, 1.0);
-      skyCol.lerpColors(new THREE.Color(0x1e1b4b), new THREE.Color(0x070b14), t);
+      skyCol.lerpColors(P.nightSky, P.midnight, t);
       sunCol.setHex(0x38bdf8); // Moonlight
       sunIntensity = 0.32;
       hemiSky.setHex(0x0f172a);
@@ -802,7 +996,10 @@ class Game {
 
     this.underglowLight.color.setHex(underColor);
     this.underglowLight.position.set(playerPos.x, playerPos.y + 0.2, playerPos.z);
-    this.underglowLight.intensity = underglowIntensity;
+    // Nitro makes the underglow pulse hot
+    this.underglowLight.intensity = this.traffic.isNitro
+      ? underglowIntensity + 2.5 + Math.sin(performance.now() * 0.03) * 1.2
+      : underglowIntensity;
 
     // Update HUD Environment badge (soft highlight on change, then quiet fade)
     if (this.dom.hudBiomeBadge && this.dom.hudBiomeBadge.innerText !== badgeText) {
@@ -820,6 +1017,24 @@ class Game {
     this.dom.hudScore.innerText = stats.score.toLocaleString();
     this.dom.hudSpeed.innerText = stats.speedKmh;
     this.dom.hudStreakPill.innerText = `FLOW STREAK x${stats.flowStreak}`;
+    this.dom.hudStreakPill.classList.toggle('hot', stats.flowStreak >= 4);
+    if (this.dom.comboBar) {
+      const ratio = stats.flowStreak > 1 ? stats.comboTimer / 4.5 : 0;
+      this.dom.comboBar.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
+    }
+    if (this.dom.meterFill) {
+      this.dom.meterFill.style.transform = `scaleX(${stats.isNitro ? Math.max(0, this.traffic.boostTimer / 3.2) : stats.khachaMeter / 100})`;
+      const ready = stats.khachaMeter >= 100 && !stats.isNitro;
+      this.dom.meterBox.classList.toggle('ready', ready);
+      this.dom.meterBox.classList.toggle('active', stats.isNitro);
+      this.dom.meterLabel.textContent = stats.isNitro ? 'NITRO ACTIVE • SMASH THROUGH!' : (ready ? 'NITRO READY • [SHIFT]' : 'KHACHA METER');
+    }
+    if (this.dom.slipBadge) this.dom.slipBadge.classList.toggle('active', stats.slipstream && !stats.isNitro);
+    if (this.dom.speedLines) {
+      const ratio = Math.max(0, (stats.speedKmh - 60) / 70);
+      this.dom.speedLines.style.opacity = Math.min(1, ratio * 0.55 + (stats.isNitro ? 0.5 : (stats.isBoosting ? 0.25 : 0)));
+      this.dom.speedLines.classList.toggle('nitro', stats.isNitro);
+    }
     if (this.dom.hudGear) {
       this.dom.hudGear.innerText = `GEAR ${stats.gear}`;
     }
@@ -832,7 +1047,8 @@ class Game {
     // Session Timer (40s sprint)
     const secsLeft = Math.ceil(this.sessionTimer);
     this.dom.hudTimer.innerHTML = secsLeft + '<small>S</small>';
-    this.dom.hudTimerBar.style.width = (this.sessionTimer / 40 * 100) + '%';
+    this.dom.hudTimerBar.style.width = Math.min(this.sessionTimer / SESSION_SECONDS * 100, 100) + '%';
+    this.dom.hudTimer.classList.toggle('low', this.sessionTimer < 8);
   }
 
   getCameraConfig(type = this.selectedVehicle) {
@@ -876,7 +1092,7 @@ class Game {
     const playerPos = this.traffic.player.position;
 
     // Dynamic FOV sensation of speed (56 deg at rest to 68 deg at full speed)
-    const targetFov = 56 + (Math.min(this.traffic.playerSpeed / 28, 1.0) * 12);
+    const targetFov = 56 + (Math.min(this.traffic.playerSpeed / 28, 1.0) * 12) + (this.traffic.isNitro ? 12 : 0);
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 3);
     this.camera.updateProjectionMatrix();
 
@@ -894,7 +1110,7 @@ class Game {
       const camZ = playerPos.z + Math.cos(time) * (orbitRad + 1);
       const camY = playerPos.y + camCfg.chaseHeight + Math.sin(time * 0.5) * 1.5;
 
-      this.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), delta * 3);
+      this.camera.position.lerp(this._tmpVec.set(camX, camY, camZ), delta * 3);
       this.camera.lookAt(playerPos.x, playerPos.y + (this.selectedVehicle === 'truck' ? 2.2 : 1.2), playerPos.z - 3);
     } else if (this.state === 'CRASH') {
       // Tumble crash camera with slight shake
@@ -940,15 +1156,40 @@ class Game {
       this.camera.lookAt(lookX, lookY, lookZ);
     }
 
+    // Camera shake (crashes, smashes, nitro) - decays quickly
+    if (this.shake > 0.001) {
+      const s = this.shake * 0.35;
+      this.camera.position.x += (Math.random() - 0.5) * s;
+      this.camera.position.y += (Math.random() - 0.5) * s;
+      this.camera.rotation.z += (Math.random() - 0.5) * s * 0.05;
+      this.shake = Math.max(0, this.shake - delta * 2.2);
+    }
+
     // Keep Directional Sunlight following player
     this.sunLight.position.z = playerPos.z - 180;
     this.sunLight.target.position.copy(playerPos);
     this.sunLight.target.updateMatrixWorld();
   }
 
+  // React to per-frame gameplay events from the traffic simulation
+  handleEvents(stats) {
+    stats.events.forEach(e => this.spawnPopup(e.text, e.kind));
+    if (stats.smash) {
+      this.addShake(0.6);
+      this.emitBurst(this.traffic.player.position, 16, 0xfacc15, 9);
+      window.soundEngine.playSmash();
+    }
+    if (stats.nearMiss) {
+      this.addShake(0.15);
+      // Big chained near-misses earn a cinematic slow-mo moment
+      if (stats.flowStreak >= 4) this.startSlowMo(0.45, 0.35);
+    }
+    if (stats.comboLost) this.spawnPopup('COMBO DROPPED', 'lost');
+  }
+
   animate() {
     requestAnimationFrame(this.animate);
-    const delta = Math.min(this.clock.getDelta(), 0.1);
+    const realDelta = Math.min(this.clock.getDelta(), 0.1);
 
     this.pollGamepad();
 
@@ -957,6 +1198,16 @@ class Game {
       this.renderer.render(this.scene, this.camera);
       return;
     }
+
+    // Slow-motion runs on real time, simulation on scaled time
+    if (this.slowMoTimer > 0) {
+      this.slowMoTimer -= realDelta;
+      if (this.slowMoTimer <= 0) {
+        this.timeScale = 1;
+        document.body.classList.remove('slowmo');
+      }
+    }
+    const delta = realDelta * this.timeScale;
 
     this.updateParticles(delta);
 
@@ -982,10 +1233,12 @@ class Game {
       this.road.update(this.traffic.player.position.z);
       this.updateHUD(stats);
       this.playRewardFeedback(stats);
+      this.handleEvents(stats);
+      this.updateMissions();
 
       if (stats.chaiPickup) {
-        const bonus = stats.chaiTimeBonus || (this.selectedVehicle === 'truck' ? 10 : (this.selectedVehicle === 'auto' ? 8 : 5));
-        this.sessionTimer = Math.min(this.sessionTimer + bonus, 99);
+        const bonus = stats.chaiTimeBonus;
+        this.sessionTimer = Math.min(this.sessionTimer + bonus, MAX_SESSION_SECONDS);
         this.showChaiToast(this.selectedVehicle, bonus);
       }
 
@@ -993,13 +1246,10 @@ class Game {
         this.showFastagToast();
       }
 
-      // Emit exhaust smoke when accelerating
+      // Emit exhaust smoke when accelerating (double plume on nitro)
       if (this.input.up || stats.isBoosting) {
         this.emitSmoke(this.traffic.player.position, stats.isBoosting);
-      }
-
-      if (stats.nearMiss) {
-        this.showNearMissToast();
+        if (stats.isNitro) this.emitSmoke(this.traffic.player.position, true);
       }
 
       if (stats.crashed) {
@@ -1025,7 +1275,7 @@ class Game {
       }
     }
 
-    this.updateCamera(delta);
+    this.updateCamera(realDelta);
     this.renderer.render(this.scene, this.camera);
   }
 }

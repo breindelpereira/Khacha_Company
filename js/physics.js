@@ -1,5 +1,37 @@
 // Arcade Vehicle Physics, Player Controls, AI Traffic & Near-Miss Detection for NH Odyssey
 
+// Single source of truth for playable ride stats
+const PLAYER_SPECS = {
+  auto: {
+    build: () => window.vehicleBuilder.createAutoRickshaw({ primaryColor: 0x15803d, canopyColor: 0xfacc15, plate: 'MH12 KC 0044' }),
+    maxSpeed: 26.5, accel: 8.5, braking: 16.0, timeBonus: 8, boostDuration: 3.5, width: 1.6, length: 3.2
+  },
+  car: {
+    build: () => window.vehicleBuilder.createMarutiSwift({ bodyColor: 0xdc2626, hasBlackRoof: true, plate: 'MH12 KC 0118' }),
+    maxSpeed: 33.0, accel: 10.2, braking: 18.0, timeBonus: 5, boostDuration: 3.0, width: 1.74, length: 3.85
+  },
+  truck: {
+    build: () => window.vehicleBuilder.createTataTruck({ cabColor: 0xd97706, plate: 'MH12 KC 0082' }),
+    maxSpeed: 22.5, accel: 6.2, braking: 14.0, timeBonus: 10, boostDuration: 4.5, width: 2.2, length: 6.2
+  }
+};
+
+// AI traffic mix: [cumulative probability, type]
+const TRAFFIC_MIX = [
+  { p: 0.28, type: 'truck' },
+  { p: 0.50, type: 'car' },
+  { p: 0.63, type: 'taxi' },
+  { p: 0.77, type: 'auto' },
+  { p: 0.91, type: 'bike' },
+  { p: 1.00, type: 'bus' }
+];
+
+const COMBO_WINDOW = 4.5;   // seconds to chain the next near-miss before the streak drops
+const MAX_STREAK = 8;
+const NITRO_DURATION = 3.2;
+const NITRO_SPEED_MULT = 1.45;
+const PICKUP_SPEED_MULT = 1.25;
+
 class TrafficManager {
   constructor(scene, roadManager) {
     this.scene = scene;
@@ -26,15 +58,14 @@ class TrafficManager {
     this.invulnerableTimer = 0;
     this.chaiTimeBonus = 8; // Default Auto: +8s
     this.chaiBoostDuration = 3.5;
+    this.boostMult = PICKUP_SPEED_MULT;
+    this.isNitro = false;
+    this.khachaMeter = 0; // 0..100, fills from near-misses, overtakes & slipstream
+    this.comboTimer = 0;
+    this.playerWidth = 1.6;
+    this.playerLength = 3.2;
 
-    // Stats
-    this.distanceCovered = 0; // In meters
-    this.nearMissCount = 0;
-    this.hornCount = 0;
-    this.chaiCount = 0;
-    this.flowStreak = 1;
-    this.score = 0;
-    this.topSpeedKmh = 0;
+    this.resetStats();
 
     // Shockwave mesh for horn effect
     this.hornWave = this.createHornWave();
@@ -69,6 +100,9 @@ class TrafficManager {
     this.playerLateralOffset = 1.8;
     this.playerRoll = 0;
     this.boostTimer = 0;
+    this.isNitro = false;
+    this.khachaMeter = 0;
+    this.comboTimer = 0;
     this.invulnerableTimer = 2.5; // 2.5s safe grace period!
 
     if (this.player) {
@@ -76,18 +110,40 @@ class TrafficManager {
       this.player.visible = true;
     }
 
-    // Reset stats
-    this.distanceCovered = 0;
+    this.resetStats();
+
+    // Clear and respawn fresh AI traffic at least 60m ahead
+    this.initTraffic(startZ);
+  }
+
+  resetStats() {
+    this.distanceCovered = 0; // In meters
     this.nearMissCount = 0;
     this.hornCount = 0;
     this.chaiCount = 0;
+    this.overtakeCount = 0;
+    this.smashCount = 0;
+    this.tollCount = 0;
+    this.nitroCount = 0;
+    this.slipstreamTime = 0;
+    this.bestStreak = 1;
     this.flowStreak = 1;
     this.score = 0;
     this.topSpeedKmh = 0;
     this.currentGear = 1;
+  }
 
-    // Clear and respawn fresh AI traffic at least 60m ahead
-    this.initTraffic(startZ);
+  // Apply a ride's stats from PLAYER_SPECS and build its mesh
+  applyPlayerSpec(vehicleType) {
+    const spec = PLAYER_SPECS[vehicleType] || PLAYER_SPECS.auto;
+    this.player = spec.build();
+    this.playerMaxSpeed = spec.maxSpeed;
+    this.playerAcceleration = spec.accel;
+    this.playerBraking = spec.braking;
+    this.chaiTimeBonus = spec.timeBonus;
+    this.chaiBoostDuration = spec.boostDuration;
+    this.playerWidth = spec.width;
+    this.playerLength = spec.length;
   }
 
   // Initialize Player Vehicle with vehicle selection
@@ -96,36 +152,7 @@ class TrafficManager {
       this.scene.remove(this.player);
     }
     this.vehicleType = vehicleType;
-
-    if (vehicleType === 'truck') {
-      this.player = window.vehicleBuilder.createTataTruck({ cabColor: 0xd97706 });
-      this.playerMaxSpeed = 22.5; // ~81 km/h
-      this.playerAcceleration = 6.2;
-      this.playerBraking = 14.0;
-      this.chaiTimeBonus = 10; // +10s Dhaba Kulhad Chai
-      this.chaiBoostDuration = 4.5;
-    } else if (vehicleType === 'car') {
-      this.player = window.vehicleBuilder.createMarutiSwift({
-        bodyColor: 0xdc2626,
-        hasBlackRoof: true
-      });
-      this.playerMaxSpeed = 33.0; // ~118 km/h
-      this.playerAcceleration = 10.2;
-      this.playerBraking = 18.0;
-      this.chaiTimeBonus = 5; // +5s Sting Energy Surge
-      this.chaiBoostDuration = 3.0;
-    } else {
-      // Auto-Rickshaw (Default)
-      this.player = window.vehicleBuilder.createAutoRickshaw({
-        primaryColor: 0x15803d,
-        canopyColor: 0xfacc15
-      });
-      this.playerMaxSpeed = 26.5; // ~95 km/h
-      this.playerAcceleration = 8.5;
-      this.playerBraking = 16.0;
-      this.chaiTimeBonus = 8; // +8s Kadak Cutting Chai
-      this.chaiBoostDuration = 3.5;
-    }
+    this.applyPlayerSpec(vehicleType);
 
     this.player.position.set(this.road.getRoadCurve(startZ) + 1.8, this.road.getRoadElevation(startZ), startZ);
     this.scene.add(this.player);
@@ -149,36 +176,7 @@ class TrafficManager {
     if (this.player) {
       this.scene.remove(this.player);
     }
-
-    if (vehicleType === 'truck') {
-      this.player = window.vehicleBuilder.createTataTruck({ cabColor: 0xd97706 });
-      this.playerMaxSpeed = 22.5; // ~81 km/h
-      this.playerAcceleration = 6.2;
-      this.playerBraking = 14.0;
-      this.chaiTimeBonus = 10; // +10s Kesari Vimal Stamina
-      this.chaiBoostDuration = 4.5;
-    } else if (vehicleType === 'car') {
-      this.player = window.vehicleBuilder.createMarutiSwift({
-        bodyColor: 0xdc2626,
-        hasBlackRoof: true
-      });
-      this.playerMaxSpeed = 33.0; // ~118 km/h
-      this.playerAcceleration = 10.2;
-      this.playerBraking = 18.0;
-      this.chaiTimeBonus = 5; // +5s Sting Red Nitro
-      this.chaiBoostDuration = 3.0;
-    } else {
-      // Auto-Rickshaw
-      this.player = window.vehicleBuilder.createAutoRickshaw({
-        primaryColor: 0x15803d,
-        canopyColor: 0xfacc15
-      });
-      this.playerMaxSpeed = 26.5; // ~95 km/h
-      this.playerAcceleration = 8.5;
-      this.playerBraking = 16.0;
-      this.chaiTimeBonus = 8; // +8s Kadak Cutting Chai
-      this.chaiBoostDuration = 3.5;
-    }
+    this.applyPlayerSpec(vehicleType);
 
     this.player.position.copy(oldPos);
     this.player.rotation.copy(oldRot);
@@ -219,40 +217,45 @@ class TrafficManager {
   // Spawn a single AI vehicle (Tata Truck, Maruti Swift, or Auto)
   spawnAIVehicle(z) {
     const rand = Math.random();
-    let mesh, type, speedKmh, width, length;
+    const type = (TRAFFIC_MIX.find(m => rand < m.p) || TRAFFIC_MIX[0]).type;
+    const vb = window.vehicleBuilder;
+    let mesh, speedKmh;
 
-    if (rand < 0.45) {
-      // 45% Tata Freight Truck ("Horn OK Please")
-      mesh = window.vehicleBuilder.createTataTruck({
-        cabColor: Math.random() < 0.5 ? 0x2563eb : 0xd97706
-      });
-      type = 'truck';
+    if (type === 'truck') {
+      // Tata Freight Truck ("Horn OK Please")
+      mesh = vb.createTataTruck({ cabColor: [0x2563eb, 0xd97706, 0x15803d, 0xbe123c][Math.floor(Math.random() * 4)] });
       speedKmh = 48 + Math.random() * 24; // 48 - 72 km/h
-      width = 2.6;
-      length = 7.5;
-    } else if (rand < 0.8) {
-      // 35% Maruti Suzuki Swift
-      const swiftColors = [0xdc2626, 0xf8fafc, 0x475569, 0x1e3a8a];
-      const randomColor = swiftColors[Math.floor(Math.random() * swiftColors.length)];
-      mesh = window.vehicleBuilder.createMarutiSwift({
-        bodyColor: randomColor,
+    } else if (type === 'car') {
+      const swiftColors = [0xdc2626, 0xf8fafc, 0x475569, 0x1e3a8a, 0xf97316];
+      mesh = vb.createMarutiSwift({
+        bodyColor: swiftColors[Math.floor(Math.random() * swiftColors.length)],
         hasBlackRoof: Math.random() < 0.65
       });
-      type = 'car';
       speedKmh = 76 + Math.random() * 26; // 76 - 102 km/h
-      width = 1.74;
-      length = 3.85;
+    } else if (type === 'taxi') {
+      mesh = vb.createAmbassador();
+      speedKmh = 62 + Math.random() * 20;
+    } else if (type === 'bike') {
+      mesh = vb.createBullet();
+      speedKmh = 70 + Math.random() * 25;
+    } else if (type === 'bus') {
+      mesh = vb.createBus();
+      speedKmh = 50 + Math.random() * 15;
     } else {
-      // 20% Fellow Auto-Rickshaw
-      mesh = window.vehicleBuilder.createAutoRickshaw();
-      type = 'auto';
+      mesh = vb.createAutoRickshaw({
+        primaryColor: Math.random() < 0.7 ? 0x15803d : 0x111827,
+        canopyColor: 0xfacc15
+      });
       speedKmh = 55 + Math.random() * 20; // 55 - 75 km/h
-      width = 1.6;
-      length = 3.2;
     }
+    const width = mesh.userData.width;
+    const length = mesh.userData.length;
 
-    // Pick random lane
-    const laneIndex = Math.floor(Math.random() * this.lanes.length);
+    // Buses & trucks prefer the outer slow lanes
+    const heavy = type === 'bus' || type === 'truck';
+    const laneIndex = heavy && Math.random() < 0.7
+      ? (Math.random() < 0.5 ? 0 : this.lanes.length - 1)
+      : Math.floor(Math.random() * this.lanes.length);
     const laneOffset = this.lanes[laneIndex];
 
     const roadX = this.road.getRoadCurve(z);
@@ -273,9 +276,10 @@ class TrafficManager {
       laneOffset: laneOffset,
       targetLaneOffset: laneOffset,
       laneChangeTimer: 2.0 + Math.random() * 4.5,
-      laneChangeSpeed: type === 'car' ? 4.4 : (type === 'auto' ? 3.6 : 2.2),
+      laneChangeSpeed: type === 'car' || type === 'bike' ? 4.4 : (type === 'auto' || type === 'taxi' ? 3.6 : 2.2),
       wanderPhase: Math.random() * Math.PI * 2,
-      wanderAmp: type === 'auto' ? 0.35 : (type === 'truck' ? 0.22 : 0.12),
+      wanderAmp: type === 'auto' || type === 'bike' ? 0.35 : (heavy ? 0.22 : 0.12),
+      knocked: null,
       brakeTimer: 0,
       messCooldown: 3.5 + Math.random() * 5.0,
       isYielding: false,
@@ -284,6 +288,61 @@ class TrafficManager {
       nearMissed: false,
       passArmed: false
     });
+  }
+
+  // Fire the Khacha Nitro when the meter is full. Returns true if it fired.
+  activateNitro() {
+    if (this.khachaMeter < 100 || !this.player) return false;
+    this.khachaMeter = 0;
+    this.boostTimer = NITRO_DURATION;
+    this.boostMult = NITRO_SPEED_MULT;
+    this.isNitro = true;
+    this.nitroCount++;
+    return true;
+  }
+
+  addMeter(amount) {
+    if (this.isNitro) return;
+    this.khachaMeter = Math.min(100, this.khachaMeter + amount);
+  }
+
+  // Bump the flow streak and refresh the combo window
+  bumpStreak() {
+    this.flowStreak = Math.min(this.flowStreak + 1, MAX_STREAK);
+    this.bestStreak = Math.max(this.bestStreak, this.flowStreak);
+    this.comboTimer = COMBO_WINDOW;
+  }
+
+  // Put a vehicle back far ahead of the player as fresh traffic
+  recycleVehicle(v, playerZ) {
+    v.mesh.position.z = playerZ - 180 - Math.random() * 80;
+    v.mesh.rotation.set(0, 0, 0);
+    const newLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
+    v.laneOffset = newLane;
+    v.targetLaneOffset = newLane;
+    v.speedUnits = v.baseSpeedUnits;
+    v.targetSpeedUnits = v.baseSpeedUnits;
+    v.laneChangeTimer = 2.0 + Math.random() * 4.0;
+    v.messCooldown = 3.5 + Math.random() * 6.0;
+    v.brakeTimer = 0;
+    v.isYielding = false;
+    v.nearMissed = false;
+    v.passArmed = false;
+    v.knocked = null;
+  }
+
+  // Nitro ram: launch a vehicle off the road in a spinning arc
+  knockVehicle(v, playerX) {
+    const side = Math.sign(v.mesh.position.x - playerX) || (Math.random() < 0.5 ? -1 : 1);
+    const heavy = v.type === 'bus' || v.type === 'truck';
+    v.knocked = {
+      t: 0,
+      vx: side * (heavy ? 7 : 12),
+      vy: heavy ? 5 : 9,
+      vz: -this.playerSpeed * 0.9,
+      spinX: (Math.random() - 0.5) * 8,
+      spinZ: side * (heavy ? 3 : 9)
+    };
   }
 
   // Trigger Desi Horn and push AI traffic to yield
@@ -306,6 +365,7 @@ class TrafficManager {
     const playerLane = this.playerLateralOffset;
 
     this.vehicles.forEach(v => {
+      if (v.knocked) return;
       const distZ = playerZ - v.mesh.position.z;
       // If vehicle is 5m to 65m ahead and roughly in player's path (+/- 2.6m)
       if (distZ > 5 && distZ < 65 && Math.abs(v.laneOffset - playerLane) < 2.6) {
@@ -360,8 +420,12 @@ class TrafficManager {
       // Handle Boost
       if (this.boostTimer > 0) {
         this.boostTimer -= delta;
-        this.playerSpeed = THREE.MathUtils.lerp(this.playerSpeed, this.playerMaxSpeed * 1.25, delta * 3.5);
+        this.playerSpeed = THREE.MathUtils.lerp(this.playerSpeed, this.playerMaxSpeed * this.boostMult, delta * 3.5);
         throttle = true;
+        if (this.boostTimer <= 0) {
+          this.isNitro = false;
+          this.boostMult = PICKUP_SPEED_MULT;
+        }
       } else if (input.up || input.forward) {
         // Realistic torque curve: strong pull at low speed, gradual build to top speed
         const speedRatio = this.playerSpeed / this.playerMaxSpeed;
@@ -386,8 +450,23 @@ class TrafficManager {
       }
     }
 
-    // Clamp speed (0 to max or boosted max)
-    const effectiveMax = (this.boostTimer > 0) ? this.playerMaxSpeed * 1.25 : this.playerMaxSpeed;
+    // Combo window: let the streak drop if no near-miss chains in time
+    let comboLost = false;
+    if (!isAutopilot && this.flowStreak > 1) {
+      this.comboTimer -= delta;
+      if (this.comboTimer <= 0) {
+        this.flowStreak = 1;
+        this.comboTimer = 0;
+        comboLost = true;
+      }
+    }
+
+    // Brake lights on the player's ride
+    window.vehicleBuilder.setBrakeLights(this.player, brake && this.playerSpeed > 0.5);
+
+    // Clamp speed (0 to max, slipstream bonus, or boosted max)
+    const slipBonus = this.inSlipstream ? 1.08 : 1.0;
+    const effectiveMax = (this.boostTimer > 0) ? this.playerMaxSpeed * this.boostMult : this.playerMaxSpeed * slipBonus;
     this.playerSpeed = THREE.MathUtils.clamp(this.playerSpeed, 0, effectiveMax);
     const speedKmh = Math.round(this.playerSpeed * 3.6);
     if (speedKmh > this.topSpeedKmh) this.topSpeedKmh = speedKmh;
@@ -453,15 +532,11 @@ class TrafficManager {
     let overtakeOccurred = false;
     const playerZ = this.player.position.z;
     const playerX = this.player.position.x;
-    let playerWidth = 1.6;
-    let playerLength = 3.2;
-    if (this.vehicleType === 'truck') {
-      playerWidth = 2.2;
-      playerLength = 6.2;
-    } else if (this.vehicleType === 'car') {
-      playerWidth = 1.74;
-      playerLength = 3.85;
-    }
+    const playerWidth = this.playerWidth;
+    const playerLength = this.playerLength;
+    const events = []; // floating score popups for the HUD
+    let smashOccurred = false;
+    let slipstream = false;
 
     // 0. Gather all road hazards & toll plazas ahead for AI vehicle awareness
     const roadObstacles = [];
@@ -470,7 +545,7 @@ class TrafficManager {
         if (chunk.userData && chunk.userData.scenery) {
           chunk.userData.scenery.forEach(item => {
             if (!item.userData) return;
-            if (item.userData.isHazard && item.userData.hazardType === 'barricade') {
+            if (item.userData.isHazard && item.userData.hazardType === 'barricade' && item.visible) {
               roadObstacles.push({
                 type: 'barricade',
                 z: item.position.z,
@@ -496,6 +571,20 @@ class TrafficManager {
     }
 
     this.vehicles.forEach(v => {
+      // Vehicles launched by a nitro ram fly off in a spinning arc, then respawn ahead
+      if (v.knocked) {
+        const k = v.knocked;
+        k.t += delta;
+        k.vy -= 22 * delta;
+        v.mesh.position.x += k.vx * delta;
+        v.mesh.position.y = Math.max(v.mesh.position.y + k.vy * delta, this.road.getRoadElevation(v.mesh.position.z) - 1.5);
+        v.mesh.position.z += k.vz * delta;
+        v.mesh.rotation.x += k.spinX * delta;
+        v.mesh.rotation.z += k.spinZ * delta;
+        if (k.t > 2.2) this.recycleVehicle(v, playerZ);
+        return;
+      }
+
       const distAheadOfPlayer = playerZ - v.mesh.position.z; // Positive = vehicle is in front of player
 
       // 1. Static Hazard & Toll Plaza Avoidance for AI
@@ -550,7 +639,7 @@ class TrafficManager {
       let closestAhead = null;
       let minGapZ = 999;
       this.vehicles.forEach(other => {
-        if (other === v) return;
+        if (other === v || other.knocked) return;
         const gapZ = v.mesh.position.z - other.mesh.position.z; // other is ahead of v if gapZ > 0
         if (gapZ > 0 && gapZ < minGapZ) {
           const latDist = Math.abs(other.laneOffset - v.laneOffset);
@@ -583,7 +672,7 @@ class TrafficManager {
 
       // 4. Lateral Anti-Clipping: prevent side-by-side overlap during lane changes
       this.vehicles.forEach(other => {
-        if (other === v) return;
+        if (other === v || other.knocked) return;
         const dZ = Math.abs(v.mesh.position.z - other.mesh.position.z);
         if (dZ < 4.5) {
           const dX = v.laneOffset - other.laneOffset;
@@ -712,6 +801,7 @@ class TrafficManager {
       const naturalDrift = Math.sin(v.wanderPhase) * v.wanderAmp;
 
       // 8. Smooth Speed Interpolation & Advance Position
+      window.vehicleBuilder.setBrakeLights(v.mesh, v.targetSpeedUnits < v.speedUnits - 0.6);
       v.speedUnits = THREE.MathUtils.lerp(v.speedUnits, v.targetSpeedUnits, delta * 2.8);
       v.mesh.position.z -= v.speedUnits * delta;
 
@@ -739,8 +829,26 @@ class TrafficManager {
       const minDistanceX = (playerWidth + v.width) * 0.5 * 0.85;
       const minDistanceZ = (playerLength + v.length) * 0.5 * 0.85;
 
-      if (this.invulnerableTimer <= 0 && dx < minDistanceX && dz < minDistanceZ && !isAutopilot) {
+      const touching = dx < minDistanceX && dz < minDistanceZ;
+      if (touching && !isAutopilot && this.isNitro) {
+        // KHACHA SMASH: nitro rams traffic out of the way
+        this.knockVehicle(v, playerX);
+        this.smashCount++;
+        this.bumpStreak();
+        const pts = 400 * this.flowStreak;
+        this.score += pts;
+        smashOccurred = true;
+        events.push({ text: `KHACHA SMASH! +${pts}`, kind: 'smash' });
+        return;
+      }
+      if (this.invulnerableTimer <= 0 && touching && !isAutopilot) {
         collisionOccurred = true;
+      }
+
+      // Slipstream: tucked in 4-16m behind a vehicle in the same lane at speed
+      if (!isAutopilot && distAheadOfPlayer > (playerLength + v.length) * 0.5 + 1 && distAheadOfPlayer < 16 &&
+          dx < v.width * 0.5 + 0.3 && speedKmh > 50) {
+        slipstream = true;
       }
 
       // 12. Check Near-Miss Detection (Close shave at high speed)
@@ -749,8 +857,11 @@ class TrafficManager {
         v.nearMissed = true;
         nearMissOccurred = true;
         this.nearMissCount++;
-        this.flowStreak = Math.min(this.flowStreak + 1, 5);
-        this.score += 250 * this.flowStreak;
+        this.bumpStreak();
+        const pts = 250 * this.flowStreak;
+        this.score += pts;
+        this.addMeter(20);
+        events.push({ text: `NEAR MISS +${pts}`, kind: 'nearmiss' });
         window.soundEngine.playNearMiss();
       }
 
@@ -763,25 +874,23 @@ class TrafficManager {
       } else if (!isAutopilot && v.passArmed && distAheadOfPlayer < -clearBehind && dx > minDistanceX) {
         v.passArmed = false;
         overtakeOccurred = true;
+        this.overtakeCount++;
+        this.addMeter(6);
       }
 
       // 13. Recycle AI vehicle if it falls far behind player (>80m behind)
       if (v.mesh.position.z > playerZ + 80) {
         // Spawn far ahead (180m to 260m ahead of player)
-        v.mesh.position.z = playerZ - 180 - Math.random() * 80;
-        const newLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
-        v.laneOffset = newLane;
-        v.targetLaneOffset = newLane;
-        v.speedUnits = v.baseSpeedUnits;
-        v.targetSpeedUnits = v.baseSpeedUnits;
-        v.laneChangeTimer = 2.0 + Math.random() * 4.0;
-        v.messCooldown = 3.5 + Math.random() * 6.0;
-        v.brakeTimer = 0;
-        v.isYielding = false;
-        v.nearMissed = false;
-        v.passArmed = false;
+        this.recycleVehicle(v, playerZ);
       }
     });
+
+    // Slipstream charges the Khacha meter and gives a small top-speed tow
+    this.inSlipstream = slipstream;
+    if (slipstream) {
+      this.slipstreamTime += delta;
+      this.addMeter(14 * delta);
+    }
 
     // Check Pickup Collections (Meme Powerup Boost), Hazards & FASTag Toll Plazas
     let pickedUpChai = false;
@@ -803,7 +912,12 @@ class TrafficManager {
                 pickedUpChai = true;
                 this.chaiCount++;
                 this.score += 500;
-                this.boostTimer = this.chaiBoostDuration || 3.5; // Unique vehicle speed surge!
+                this.addMeter(25);
+                events.push({ text: 'POWER-UP +500', kind: 'pickup' });
+                if (!this.isNitro) {
+                  this.boostTimer = this.chaiBoostDuration || 3.5; // Unique vehicle speed surge!
+                  this.boostMult = PICKUP_SPEED_MULT;
+                }
                 window.soundEngine.playChaiPickup();
               }
             }
@@ -814,8 +928,16 @@ class TrafficManager {
               const hZ = item.position.z;
               const dx = Math.abs(playerX - hX);
               const dz = Math.abs(playerZ - hZ);
-              if (this.invulnerableTimer <= 0 && dx < 1.6 && dz < 2.2 && !isAutopilot) {
-                collisionOccurred = true;
+              if (item.visible && dx < 1.6 && dz < 2.2 && !isAutopilot) {
+                if (this.isNitro) {
+                  item.visible = false; // barricade obliterated
+                  this.smashCount++;
+                  this.score += 300;
+                  smashOccurred = true;
+                  events.push({ text: 'BARRICADE BUSTED +300', kind: 'smash' });
+                } else if (this.invulnerableTimer <= 0) {
+                  collisionOccurred = true;
+                }
               }
             }
 
@@ -854,6 +976,9 @@ class TrafficManager {
                     item.userData.passed = true;
                     fastagPassed = true;
                     this.score += 1500;
+                    this.tollCount++;
+                    this.addMeter(20);
+                    events.push({ text: 'FASTag +1500', kind: 'toll' });
                     window.soundEngine.playChaiPickup();
                   }
                 } else if (!hitIsland) {
@@ -882,7 +1007,15 @@ class TrafficManager {
       score: this.score,
       flowStreak: this.flowStreak,
       gear: this.currentGear,
-      isBoosting: this.boostTimer > 0
+      isBoosting: this.boostTimer > 0,
+      isNitro: this.isNitro,
+      khachaMeter: this.khachaMeter,
+      comboTimer: this.comboTimer,
+      comboLost: comboLost,
+      slipstream: slipstream,
+      smash: smashOccurred,
+      braking: brake,
+      events: events
     };
   }
 
