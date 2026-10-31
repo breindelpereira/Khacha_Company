@@ -97,6 +97,7 @@ class Game {
       routeTitle: document.getElementById('route-title'),
       routeOptions: document.getElementById('route-options'),
       routeEffect: document.getElementById('route-effect'),
+      routeCard: document.getElementById('route-card'),
       finalOvertakes: document.getElementById('final-overtakes'),
       finalSmashes: document.getElementById('final-smashes'),
       finalStreak: document.getElementById('final-streak'),
@@ -785,6 +786,8 @@ class Game {
     if (this.dom.popups) this.dom.popups.innerHTML = '';
     if (this.dom.routeBanner) this.dom.routeBanner.classList.remove('active');
     if (this.dom.routeEffect) this.dom.routeEffect.classList.remove('active');
+    this.currentRoute = null;
+    this.envSnap = true;
 
     // Reset road chunks cleanly to starting line (z = 0)
     this.road.reset(0);
@@ -920,7 +923,7 @@ class Game {
   // Phase 1 (0 - 180m): Golden Sunset over Rural Foothills
   // Phase 2 (180m - 480m): Violet Dusk & Twilight over Expressway Corridor
   // Phase 3 (480m+): Midnight Cyber-Desi Neon Highway with Vehicle Spotlights & Swift Underglow
-  updateEnvironment(playerZ) {
+  updateEnvironment(playerZ, delta = 0.016) {
     if (!this.traffic || !this.traffic.player) return;
     const playerPos = this.traffic.player.position;
     const dist = Math.abs(playerZ);
@@ -967,17 +970,41 @@ class Game {
       badgeText = '🌃 NEON URBAN OUTSKIRTS • MIDNIGHT';
     }
 
-    // Apply colors to scene background & fog
-    this.scene.background.copy(skyCol);
+    // Chosen route overrides the distance-based sky with its own mood
+    let fogDensity = 0.0035;
+    const route = this.road.getRouteAt(playerZ);
+    if (route) {
+      const pal = route.palette;
+      skyCol.setHex(pal.sky);
+      sunCol.setHex(pal.sun);
+      sunIntensity = pal.sunI;
+      hemiSky.setHex(pal.hemiSky);
+      hemiGround.setHex(pal.hemiGround);
+      headIntensity = pal.head;
+      underglowIntensity = pal.glow;
+      fogDensity = pal.fog;
+      badgeText = route.badge;
+    }
+
+    // Blend smoothly toward the target mood (snap on restart)
+    const snap = this.envSnap || this._headI === undefined;
+    const k = snap ? 1 : Math.min(1, delta * 1.2);
+    this.envSnap = false;
+    this.scene.background.lerp(skyCol, k);
     if (this.scene.fog) {
-      this.scene.fog.color.copy(skyCol);
+      this.scene.fog.color.copy(this.scene.background);
+      this.scene.fog.density = THREE.MathUtils.lerp(this.scene.fog.density, fogDensity, k);
     }
-    this.sunLight.color.copy(sunCol);
-    this.sunLight.intensity = sunIntensity;
+    this.sunLight.color.lerp(sunCol, k);
+    this.sunLight.intensity = THREE.MathUtils.lerp(this.sunLight.intensity, sunIntensity, k);
     if (this.hemiLight) {
-      this.hemiLight.color.copy(hemiSky);
-      this.hemiLight.groundColor.copy(hemiGround);
+      this.hemiLight.color.lerp(hemiSky, k);
+      this.hemiLight.groundColor.lerp(hemiGround, k);
     }
+    this._headI = snap ? headIntensity : THREE.MathUtils.lerp(this._headI, headIntensity, k);
+    this._glowI = snap ? underglowIntensity : THREE.MathUtils.lerp(this._glowI, underglowIntensity, k);
+    headIntensity = this._headI;
+    underglowIntensity = this._glowI;
 
     // Update forward vehicle spotlights
     const hw = (this.selectedVehicle === 'truck') ? 0.95 : 0.65;
@@ -1177,67 +1204,73 @@ class Game {
     this.sunLight.target.updateMatrixWorld();
   }
 
-  // Route Choice banner: shows the 4 lane deals and which lane you're in
+  // Route Choice banner: the two routes ahead and which side you're on
   updateRouteBanner(stats) {
     const banner = this.dom.routeBanner;
     if (!banner) return;
     const r = stats.route;
     banner.classList.toggle('active', !!r);
-    if (r) {
-      if (this._routeOptionsRef !== r.options) {
-        this._routeOptionsRef = r.options;
-        this.dom.routeOptions.innerHTML = '';
-        r.options.forEach(opt => {
-          const el = document.createElement('div');
-          el.className = 'route-opt';
-          el.style.setProperty('--c', opt.color);
-          const icon = document.createElement('span');
-          icon.className = 'r-icon';
-          icon.textContent = opt.icon;
-          const title = document.createElement('span');
-          title.className = 'r-title';
-          title.textContent = opt.title;
-          el.append(icon, title);
-          this.dom.routeOptions.appendChild(el);
-        });
-      }
-      [...this.dom.routeOptions.children].forEach((el, i) => {
-        el.classList.toggle('current', i === r.lane);
-        el.classList.toggle('locked', r.locked && i === r.lane);
+    if (!r) return;
+    if (this._routeOptionsRef !== r.options) {
+      this._routeOptionsRef = r.options;
+      this.dom.routeOptions.innerHTML = '';
+      r.options.forEach((route, i) => {
+        const el = document.createElement('div');
+        el.className = 'route-opt';
+        el.style.setProperty('--c', route.color);
+        const head = document.createElement('span');
+        head.className = 'r-title';
+        head.textContent = `${i === 0 ? '↖' : ''} ${route.icon} ${route.name} ${i === 1 ? '↗' : ''}`.trim();
+        const perk = document.createElement('span');
+        perk.className = 'r-perk';
+        perk.textContent = route.perkLabel;
+        const traffic = document.createElement('span');
+        traffic.className = 'r-traffic';
+        traffic.textContent = `🚗 ${route.trafficLabel}`;
+        el.append(head, perk, traffic);
+        this.dom.routeOptions.appendChild(el);
       });
-      this.dom.routeTitle.textContent = r.locked
-        ? `🔒 LOCKED IN • GATE IN ${Math.ceil(r.dist)}m`
-        : `🔀 ROUTE CHOICE IN ${Math.ceil(r.dist)}m • PICK A LANE`;
     }
-
-    // Active timed route effects
-    let effect = '';
-    if (stats.scoreMult > 1) effect = `💰 2X SCORE ${Math.ceil(this.traffic.scoreMultTimer)}s`;
-    else if (stats.rushActive) effect = `🚦 RUSH HOUR • 3X NEAR-MISS ${Math.ceil(this.traffic.rushTimer)}s`;
-    if (this.dom.routeEffect) {
-      this.dom.routeEffect.textContent = effect;
-      this.dom.routeEffect.classList.toggle('active', !!effect);
-    }
+    [...this.dom.routeOptions.children].forEach((el, i) => {
+      el.classList.toggle('current', i === r.side);
+      el.classList.toggle('locked', r.locked && i === r.side);
+    });
+    this.dom.routeTitle.textContent = r.locked
+      ? `🔒 COMMITTED • SPLIT IN ${Math.ceil(r.dist)}m`
+      : `🔀 ROAD SPLITS IN ${Math.ceil(r.dist)}m • LEFT OR RIGHT?`;
   }
 
-  applyRouteChoice(option) {
-    if (option.id === 'time') {
-      this.sessionTimer = Math.min(this.sessionTimer + 6, MAX_SESSION_SECONDS);
+  // Player crossed the gate: switch traffic, perks and announce the new route
+  applyRouteChoice(route) {
+    this.traffic.setTrafficProfile(route.traffic, this.traffic.player.position.z);
+    this.currentRoute = route;
+    if (this.dom.routeEffect) {
+      this.dom.routeEffect.textContent = `${route.icon} ${route.name} • ${route.perkLabel.toUpperCase()}`;
+      this.dom.routeEffect.classList.add('active');
     }
-    const good = option.id !== 'challan';
-    this.spawnPopup(`${option.icon} ${option.title}`, good ? 'route' : 'lost');
-    if (good) {
-      window.soundEngine.playMissionComplete();
-      this.emitBurst(this.traffic.player.position, 20, parseInt(option.color.slice(1), 16), 7);
-    } else {
-      window.soundEngine.playBump();
-      this.addShake(0.4);
+    const card = this.dom.routeCard;
+    if (card) {
+      card.querySelector('.rc-icon').textContent = route.icon;
+      card.querySelector('.rc-name').textContent = route.name;
+      card.querySelector('.rc-sub').textContent = `${route.perkLabel} • ${route.trafficLabel}`;
+      card.style.setProperty('--c', route.color);
+      card.classList.remove('show');
+      void card.offsetWidth;
+      card.classList.add('show');
     }
+    window.soundEngine.playMissionComplete();
+    this.emitBurst(this.traffic.player.position, 20, parseInt(route.color.slice(1), 16), 7);
   }
 
   // React to per-frame gameplay events from the traffic simulation
   handleEvents(stats) {
     this.updateRouteBanner(stats);
+    if (stats.routeDecided) {
+      // Committed at the barrier: reshape the road beyond the gate for the chosen route
+      const d = stats.routeDecided;
+      this.road.setRoute(d.gateZ, d.route.id, d.side);
+      this.traffic.updatePickupVisuals(this.selectedVehicle);
+    }
     if (stats.routeChoice) this.applyRouteChoice(stats.routeChoice);
     if (stats.scraped) {
       window.soundEngine.playBump();
@@ -1284,7 +1317,7 @@ class Game {
 
     // Dynamic Night & Neon Highway Atmosphere update
     if (this.traffic && this.traffic.player) {
-      this.updateEnvironment(this.traffic.player.position.z);
+      this.updateEnvironment(this.traffic.player.position.z, delta);
     }
 
     if (this.state === 'ATTRACT') {
@@ -1339,6 +1372,8 @@ class Game {
       if (this.autoResetTimer <= 0) {
         // Return to Attract Mode with clean world
         this.state = 'ATTRACT';
+        this.currentRoute = null;
+        this.envSnap = true;
         this.road.reset(0);
         this.traffic.reset(0, this.selectedVehicle);
         this.dom.gameoverOverlay.classList.add('hidden');

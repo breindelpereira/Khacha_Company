@@ -1173,34 +1173,42 @@ class SceneryBuilder {
     return group;
   }
 
-  // ROUTE CHOICE GANTRY: one painted deal sign above each of the 4 lanes
-  createRouteSignTexture(option) {
+  // ROUTE CHOICE GANTRY: a big destination sign above each carriageway
+  createRouteSignTexture(route, arrow) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 192;
+    canvas.width = 512;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = option.color;
-    ctx.fillRect(0, 0, 256, 192);
+    ctx.fillStyle = route.color;
+    ctx.fillRect(0, 0, 512, 256);
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(6, 6, 244, 180);
-    ctx.textAlign = 'center';
-    ctx.font = '64px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-    ctx.fillText(option.icon, 128, 76);
+    ctx.lineWidth = 10;
+    ctx.strokeRect(8, 8, 496, 240);
+    ctx.textAlign = 'left';
+    ctx.font = '84px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    ctx.fillText(route.icon, 28, 112);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 40px Impact, Arial Black, sans-serif';
-    ctx.fillText(option.title, 128, 132);
+    ctx.font = 'bold 56px Impact, Arial Black, sans-serif';
+    ctx.fillText(route.name, 140, 100);
     ctx.fillStyle = '#fef9c3';
-    ctx.font = 'bold 22px Arial, sans-serif';
-    ctx.fillText(option.sub, 128, 168);
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillText(route.perkLabel, 140, 150);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.fillText(route.trafficLabel, 140, 190);
+    // Direction arrow
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 64px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(arrow, 68, 220);
     return new THREE.CanvasTexture(canvas);
   }
 
-  createRouteGantry(options, lanes) {
+  createRouteGantry(routes, sides) {
     const group = new THREE.Group();
     const steel = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3, metalness: 0.8 });
 
-    // Header beam: "CHOOSE YOUR ROUTE"
+    // Header beam
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 96;
@@ -1215,34 +1223,28 @@ class SceneryBuilder {
     ctx.fillStyle = '#facc15';
     ctx.font = 'bold 50px Impact, Arial Black, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🔀 CHOOSE YOUR ROUTE • STAY IN LANE', 512, 68);
+    ctx.fillText('🔀 ROAD SPLITS • PICK YOUR SIDE', 512, 68);
     const header = new THREE.Mesh(
       new THREE.PlaneGeometry(16, 1.5),
       new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), side: THREE.DoubleSide })
     );
-    header.position.set(0, 9.3, 0);
+    header.position.set(0, 9.6, 0);
     group.add(header);
 
-    // One sign per lane
-    const signGeo = new THREE.PlaneGeometry(3.3, 2.5);
-    options.forEach((opt, i) => {
-      const sign = new THREE.Mesh(signGeo, new THREE.MeshBasicMaterial({ map: this.createRouteSignTexture(opt) }));
-      sign.position.set(lanes[i], 7.2, 0.05);
+    // One destination sign per carriageway
+    const signGeo = new THREE.PlaneGeometry(7.0, 3.5);
+    routes.forEach((route, i) => {
+      const sign = new THREE.Mesh(signGeo, new THREE.MeshBasicMaterial({ map: this.createRouteSignTexture(route, i === 0 ? '↖' : '↗') }));
+      sign.position.set(sides[i], 7.1, 0.05);
       group.add(sign);
-      // Arrow pointing down into the lane
-      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      arrow.rotation.x = Math.PI;
-      arrow.position.set(lanes[i], 5.6, 0.1);
-      group.add(arrow);
     });
 
-    // Truss beam & columns
     const beam = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.35, 0.35), steel);
-    beam.position.set(0, 8.5, -0.25);
+    beam.position.set(0, 8.8, -0.25);
     group.add(beam);
-    const colGeo = new THREE.CylinderGeometry(0.22, 0.26, 10, 12);
+    const colGeo = new THREE.CylinderGeometry(0.22, 0.26, 10.4, 12);
     const colL = new THREE.Mesh(colGeo, steel);
-    colL.position.set(-9.3, 5, 0);
+    colL.position.set(-9.3, 5.2, 0);
     const colR = colL.clone();
     colR.position.x = 9.3;
     group.add(colL, colR);
@@ -1256,21 +1258,70 @@ class SceneryBuilder {
     return group;
   }
 
-  // Flexible lane-divider bollard (orange with reflective band)
-  createBollard() {
-    if (!this._bollardGeo) {
-      this._bollardGeo = new THREE.CylinderGeometry(0.09, 0.12, 0.9, 8);
-      this._bollardMat = new THREE.MeshLambertMaterial({ color: 0xf97316 });
-      this._bandGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.12, 8);
-      this._bandMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+  // Concrete jersey barrier segment (red/white striped top) splitting the carriageways
+  createJerseyBarrier() {
+    if (!this._jerseyGeo) {
+      this._jerseyGeo = new THREE.BoxGeometry(0.7, 1.05, 4.0);
+      this._jerseyMat = new THREE.MeshLambertMaterial({ color: 0xd6d3d1 });
+      this._jerseyTopGeo = new THREE.BoxGeometry(0.4, 0.14, 2.0);
+      this._jerseyTopMat = new THREE.MeshBasicMaterial({ color: 0xdc2626 });
     }
     const g = new THREE.Group();
-    const post = new THREE.Mesh(this._bollardGeo, this._bollardMat);
-    post.position.y = 0.45;
-    const band = new THREE.Mesh(this._bandGeo, this._bandMat);
-    band.position.y = 0.72;
-    g.add(post, band);
+    const wall = new THREE.Mesh(this._jerseyGeo, this._jerseyMat);
+    wall.position.y = 0.52;
+    const stripe = new THREE.Mesh(this._jerseyTopGeo, this._jerseyTopMat);
+    stripe.position.set(0, 1.1, 1.0);
+    g.add(wall, stripe);
     return g;
+  }
+
+  // Konkan coconut palm
+  createPalmTree() {
+    const group = new THREE.Group();
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8b6b4a });
+    const leafMat = new THREE.MeshLambertMaterial({ color: 0x15803d, side: THREE.DoubleSide });
+    const h = 7 + Math.random() * 4;
+    const lean = (Math.random() - 0.5) * 0.35;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.3, h, 7), trunkMat);
+    trunk.position.y = h / 2;
+    trunk.rotation.z = lean;
+    group.add(trunk);
+    const top = new THREE.Group();
+    top.position.set(-Math.sin(lean) * h, h * Math.cos(lean), 0);
+    const leafGeo = new THREE.PlaneGeometry(0.9, 4.2);
+    leafGeo.translate(0, 2.1, 0);
+    for (let i = 0; i < 7; i++) {
+      const leaf = new THREE.Mesh(leafGeo, leafMat);
+      leaf.rotation.y = (i / 7) * Math.PI * 2;
+      leaf.rotation.x = 1.15;
+      const holder = new THREE.Group();
+      holder.rotation.y = (i / 7) * Math.PI * 2;
+      leaf.rotation.y = 0;
+      holder.add(leaf);
+      top.add(holder);
+    }
+    const coconuts = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 6), new THREE.MeshLambertMaterial({ color: 0x4d7c0f }));
+    coconuts.position.y = -0.3;
+    top.add(coconuts);
+    group.add(top);
+    return group;
+  }
+
+  // Western Ghats laterite rock outcrop with moss
+  createRockCliff() {
+    const group = new THREE.Group();
+    const rockMat = new THREE.MeshLambertMaterial({ color: 0x6b4f3a });
+    const mossMat = new THREE.MeshLambertMaterial({ color: 0x3f6212 });
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const size = 2.5 + Math.random() * 5;
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), i === 0 ? rockMat : (Math.random() < 0.5 ? mossMat : rockMat));
+      rock.scale.set(1, 0.7 + Math.random() * 1.4, 1);
+      rock.position.set((Math.random() - 0.5) * 6, size * 0.5, (Math.random() - 0.5) * 6);
+      rock.rotation.set(Math.random(), Math.random(), Math.random());
+      group.add(rock);
+    }
+    return group;
   }
 
   // 17. URBAN IT PARK TOWERS & ILLUMINATED CITY BUILDINGS

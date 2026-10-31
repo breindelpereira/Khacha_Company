@@ -1336,23 +1336,24 @@ body.nitro-flash #game-container::after {
 }
 .route-banner.active { opacity: 1; transform: translateX(-50%) translateY(0); }
 .route-title { font: 800 12px/1 Outfit, sans-serif; letter-spacing: .14em; color: #facc15; white-space: nowrap; }
-.route-options { display: grid; grid-template-columns: repeat(4, 104px); gap: 6px; }
+.route-options { display: grid; grid-template-columns: repeat(2, 230px); gap: 8px; }
 .route-opt {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 7px 4px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--c) 35%, rgba(15,23,42,.9));
+  align-items: flex-start;
+  gap: 4px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--c) 40%, rgba(15,23,42,.9));
   border: 2px solid transparent;
   color: #fff;
-  opacity: .6;
+  opacity: .55;
   transition: opacity .15s, transform .15s, border-color .15s;
 }
-.route-opt .r-icon { font-size: 20px; line-height: 1; }
-.route-opt .r-title { font: 700 18px/1 Teko, Impact, sans-serif; letter-spacing: .04em; white-space: nowrap; }
-.route-opt.current { opacity: 1; border-color: #fff; transform: translateY(-3px) scale(1.06); }
+.route-opt .r-title { font: 700 22px/1 Teko, Impact, sans-serif; letter-spacing: .04em; white-space: nowrap; }
+.route-opt .r-perk { font: 800 11px/1.2 Outfit, sans-serif; color: #fef08a; letter-spacing: .06em; text-transform: uppercase; }
+.route-opt .r-traffic { font: 600 11px/1.2 Outfit, sans-serif; color: #e2e8f0; }
+.route-opt.current { opacity: 1; border-color: #fff; transform: translateY(-3px) scale(1.04); }
 .route-opt.locked { border-color: #facc15; box-shadow: 0 0 16px rgba(250,204,21,.6); }
 .route-effect {
   position: absolute;
@@ -1360,8 +1361,9 @@ body.nitro-flash #game-container::after {
   top: 110px;
   padding: 7px 12px;
   border-radius: 999px;
-  background: rgba(202, 138, 4, .85);
-  color: #fff;
+  background: rgba(15, 23, 42, .82);
+  border: 1px solid rgba(250, 204, 21, .5);
+  color: #fef08a;
   font: 800 11px/1 Outfit, sans-serif;
   letter-spacing: .1em;
   opacity: 0;
@@ -1371,6 +1373,39 @@ body.nitro-flash #game-container::after {
 .popup-route { color: #fde047; font-size: 46px; text-shadow: 0 4px 0 rgba(0,0,0,.5), 0 0 24px rgba(250,204,21,.8); }
 @media (max-width: 600px), (max-height: 720px) {
   .route-banner { top: 84px; padding: 8px; }
-  .route-options { grid-template-columns: repeat(4, minmax(64px, 22vw)); }
-  .route-opt .r-title { font-size: 14px; }
+  .route-options { grid-template-columns: repeat(2, minmax(120px, 44vw)); }
+  .route-opt .r-title { font-size: 17px; }
+  .rc-name { font-size: 44px !important; }
+}
+
+/* "Now entering" route title card */
+.route-card {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 34px 16px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--c, #111827) 55%, rgba(2,6,23,.85));
+  border: 2px solid rgba(255,255,255,.55);
+  color: #fff;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.route-card.show { animation: route-card 2.6s ease forwards; }
+.rc-kicker { font: 800 11px/1 Outfit, sans-serif; letter-spacing: .3em; color: #fef08a; }
+.rc-icon { font-size: 40px; line-height: 1.1; }
+.rc-name { font: 700 60px/0.95 Teko, Impact, sans-serif; letter-spacing: .05em; text-shadow: 0 4px 0 rgba(0,0,0,.4); }
+.rc-sub { font: 600 13px/1.2 Outfit, sans-serif; color: #e2e8f0; }
+@keyframes route-card {
+  0% { opacity: 0; transform: translateX(-50%) scale(.7); }
+  12% { opacity: 1; transform: translateX(-50%) scale(1.06); }
+  20% { transform: translateX(-50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
 }

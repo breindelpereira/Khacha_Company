@@ -62,7 +62,26 @@ class VehicleBuilder {
     return plate;
   }
 
+  // Plates come from a fixed pool so plate textures are shared, not created per vehicle
   randomPlate() {
+    if (!this.platePool) {
+      this.platePool = [];
+      for (let i = 0; i < 24; i++) this.platePool.push(this.makePlateText());
+    }
+    return this.platePool[Math.floor(Math.random() * this.platePool.length)];
+  }
+
+  // Free GPU geometry/materials of a vehicle that is being replaced (shared textures are kept)
+  disposeVehicle(root) {
+    root.traverse(obj => {
+      if (obj.isMesh) {
+        obj.geometry.dispose();
+        obj.material.dispose();
+      }
+    });
+  }
+
+  makePlateText() {
     const states = ['MH', 'KA', 'GJ', 'DL', 'TN', 'RJ', 'UP', 'GA'];
     const s = states[Math.floor(Math.random() * states.length)];
     const n = String(Math.floor(Math.random() * 90) + 10);

@@ -62,10 +62,9 @@ class TrafficManager {
     this.isNitro = false;
     this.khachaMeter = 0; // 0..100, fills from near-misses, overtakes & slipstream
     this.comboTimer = 0;
-    this.scoreMult = 1;      // 2x score route
-    this.scoreMultTimer = 0;
-    this.rushTimer = 0;      // rush-hour route: 3x near-miss points
     this.scrapeCooldown = 0;
+    this.trafficProfile = null; // route-specific traffic mix / density / speed
+    this.routePerk = {};        // route perk: speedMult, nearMissMult, meterMult
     this.playerWidth = 1.6;
     this.playerLength = 3.2;
 
@@ -107,10 +106,9 @@ class TrafficManager {
     this.isNitro = false;
     this.khachaMeter = 0;
     this.comboTimer = 0;
-    this.scoreMult = 1;
-    this.scoreMultTimer = 0;
-    this.rushTimer = 0;
     this.scrapeCooldown = 0;
+    this.trafficProfile = null;
+    this.routePerk = {};
     this.invulnerableTimer = 2.5; // 2.5s safe grace period!
 
     if (this.player) {
@@ -225,8 +223,19 @@ class TrafficManager {
 
   // Spawn a single AI vehicle (Tata Truck, Maruti Swift, or Auto)
   spawnAIVehicle(z) {
+    this.vehicles.push(this.makeAIVehicle(z));
+  }
+
+  // Pick a traffic type from the active route profile (or the default highway mix)
+  chooseAIType() {
+    if (this.trafficProfile) return window.pickTrafficType(this.trafficProfile.mix);
     const rand = Math.random();
-    const type = (TRAFFIC_MIX.find(m => rand < m.p) || TRAFFIC_MIX[0]).type;
+    return (TRAFFIC_MIX.find(m => rand < m.p) || TRAFFIC_MIX[0]).type;
+  }
+
+  // Build a fresh AI vehicle (mesh added to the scene) at z
+  makeAIVehicle(z, forcedType = null) {
+    const type = forcedType || this.chooseAIType();
     const vb = window.vehicleBuilder;
     let mesh, speedKmh;
 
@@ -275,8 +284,8 @@ class TrafficManager {
     mesh.rotation.y = angle;
     this.scene.add(mesh);
 
-    const baseSpeed = speedKmh / 3.6;
-    this.vehicles.push({
+    const baseSpeed = (speedKmh / 3.6) * (this.trafficProfile ? this.trafficProfile.speedMult : 1);
+    return {
       mesh: mesh,
       type: type,
       speedUnits: baseSpeed,
@@ -295,7 +304,39 @@ class TrafficManager {
       width: width,
       length: length,
       nearMissed: false,
-      passArmed: false
+      passArmed: false,
+      parked: false
+    };
+  }
+
+  // Replace a vehicle with a brand-new one (new type/mesh) at z
+  rerollVehicle(v, z) {
+    this.scene.remove(v.mesh);
+    window.vehicleBuilder.disposeVehicle(v.mesh);
+    Object.assign(v, this.makeAIVehicle(z));
+  }
+
+  // Switch traffic to a route's mix, density and speed. Vehicles near the player stay put.
+  setTrafficProfile(profile, playerZ) {
+    this.trafficProfile = profile;
+    const count = profile ? profile.count : this.vehicles.length;
+    let spawnAhead = 140;
+    this.vehicles.forEach((v, i) => {
+      if (i >= count) {
+        v.parked = true;
+        v.mesh.visible = false;
+        return;
+      }
+      const ahead = playerZ - v.mesh.position.z;
+      const respawnAhead = v.parked || v.knocked || ahead < -20;
+      if (respawnAhead || ahead > 110) {
+        let z = v.mesh.position.z;
+        if (respawnAhead) {
+          z = playerZ - spawnAhead;
+          spawnAhead += 18 + Math.random() * 14;
+        }
+        this.rerollVehicle(v, z);
+      }
     });
   }
 
@@ -311,37 +352,6 @@ class TrafficManager {
     return gates;
   }
 
-  // Apply the gameplay side of a route choice (time bonus is handled by the game clock)
-  applyRouteEffect(id) {
-    const playerZ = this.player.position.z;
-    if (id === 'nitro') {
-      this.khachaMeter = 100;
-    } else if (id === 'double') {
-      this.scoreMult = 2;
-      this.scoreMultTimer = 15;
-    } else if (id === 'cash') {
-      this.score += 2500;
-    } else if (id === 'challan') {
-      this.score = Math.max(0, this.score - 750);
-    } else if (id === 'rush') {
-      // Pack the road ahead with traffic; near-misses pay triple for 15s
-      this.rushTimer = 15;
-      const pool = this.vehicles.filter(v => !v.knocked).slice(0, 8);
-      pool.forEach((v, i) => {
-        this.recycleVehicle(v, playerZ);
-        v.mesh.position.z = playerZ - 45 - i * 16 - Math.random() * 6;
-        const lane = this.lanes[(i * 3 + Math.floor(Math.random() * 2)) % this.lanes.length];
-        v.laneOffset = v.targetLaneOffset = lane;
-      });
-    } else if (id === 'clear') {
-      // Wave the traffic ahead off into the distance
-      this.vehicles.forEach(v => {
-        const ahead = playerZ - v.mesh.position.z;
-        if (!v.knocked && ahead > -5 && ahead < 220) this.recycleVehicle(v, playerZ - 120);
-      });
-    }
-  }
-
   // Fire the Khacha Nitro when the meter is full. Returns true if it fired.
   activateNitro() {
     if (this.khachaMeter < 100 || !this.player) return false;
@@ -355,7 +365,7 @@ class TrafficManager {
 
   addMeter(amount) {
     if (this.isNitro) return;
-    this.khachaMeter = Math.min(100, this.khachaMeter + amount);
+    this.khachaMeter = Math.min(100, this.khachaMeter + amount * (this.routePerk.meterMult || 1));
   }
 
   // Bump the flow streak and refresh the combo window
@@ -367,6 +377,11 @@ class TrafficManager {
 
   // Put a vehicle back far ahead of the player as fresh traffic
   recycleVehicle(v, playerZ) {
+    if (this.trafficProfile) {
+      // Route traffic: respawn as a fresh vehicle from the route's mix
+      this.rerollVehicle(v, playerZ - 180 - Math.random() * 80);
+      return;
+    }
     v.mesh.position.z = playerZ - 180 - Math.random() * 80;
     v.mesh.rotation.set(0, 0, 0);
     const newLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
@@ -417,7 +432,7 @@ class TrafficManager {
     const playerLane = this.playerLateralOffset;
 
     this.vehicles.forEach(v => {
-      if (v.knocked) return;
+      if (v.knocked || v.parked) return;
       const distZ = playerZ - v.mesh.position.z;
       // If vehicle is 5m to 65m ahead and roughly in player's path (+/- 2.6m)
       if (distZ > 5 && distZ < 65 && Math.abs(v.laneOffset - playerLane) < 2.6) {
@@ -480,7 +495,7 @@ class TrafficManager {
         }
       } else if (input.up || input.forward) {
         // Realistic torque curve: strong pull at low speed, gradual build to top speed
-        const speedRatio = this.playerSpeed / this.playerMaxSpeed;
+        const speedRatio = this.playerSpeed / (this.playerMaxSpeed * (this.routePerk.speedMult || 1));
         const torqueMult = Math.max(0.18, Math.pow(1.0 - Math.min(speedRatio, 0.98), 1.2));
         this.playerSpeed += this.playerAcceleration * torqueMult * delta;
         throttle = true;
@@ -518,7 +533,8 @@ class TrafficManager {
 
     // Clamp speed (0 to max, slipstream bonus, or boosted max)
     const slipBonus = this.inSlipstream ? 1.08 : 1.0;
-    const effectiveMax = (this.boostTimer > 0) ? this.playerMaxSpeed * this.boostMult : this.playerMaxSpeed * slipBonus;
+    const routeSpeed = this.routePerk.speedMult || 1;
+    const effectiveMax = (this.boostTimer > 0) ? this.playerMaxSpeed * this.boostMult * routeSpeed : this.playerMaxSpeed * slipBonus * routeSpeed;
     this.playerSpeed = THREE.MathUtils.clamp(this.playerSpeed, 0, effectiveMax);
     const speedKmh = Math.round(this.playerSpeed * 3.6);
     if (speedKmh > this.topSpeedKmh) this.topSpeedKmh = speedKmh;
@@ -544,10 +560,11 @@ class TrafficManager {
     // Constrain player within highway boundaries (-7.2m to +7.2m)
     this.playerLateralOffset = THREE.MathUtils.clamp(this.playerLateralOffset, -7.2, 7.2);
 
-    // Route Choice: inside the bollard zone the player is locked into one lane
+    // Route Choice: once the centre barrier starts, the player is committed to one carriageway
     const routeGates = this.getRouteGates();
     let routeInfo = null;
     let routeChoice = null;
+    let routeDecided = null;
     let scraped = false;
     this.scrapeCooldown -= delta;
     const pz = this.player.position.z;
@@ -556,14 +573,19 @@ class TrafficManager {
       if (ud.resolved) return;
       const ahead = pz - gate.position.z; // metres until the gate line
       const inZone = ahead > 0 && ahead <= window.ROUTE_LOCK_LENGTH;
+      if (!isAutopilot && (inZone || ahead <= 0) && ud.lockedSide === null) {
+        // Commit now so the road beyond the gate can be rebuilt well out of sight
+        ud.lockedSide = window.sideIndex(this.playerLateralOffset);
+        routeDecided = { gateZ: gate.position.z, route: ud.options[ud.lockedSide], side: ud.lockedSide };
+      }
       if (inZone && !isAutopilot) {
-        if (ud.lockedLane === null) ud.lockedLane = window.nearestLaneIndex(this.playerLateralOffset);
-        const laneX = window.ROUTE_LANES[ud.lockedLane];
-        const room = Math.max(0.15, 1.8 - this.playerWidth * 0.5 - 0.2);
-        const clamped = THREE.MathUtils.clamp(this.playerLateralOffset, laneX - room, laneX + room);
+        const half = this.playerWidth * 0.5;
+        const min = ud.lockedSide === 0 ? -7.2 : 0.55 + half;
+        const max = ud.lockedSide === 0 ? -0.55 - half : 7.2;
+        const clamped = THREE.MathUtils.clamp(this.playerLateralOffset, min, max);
         if (clamped !== this.playerLateralOffset) {
           this.playerLateralOffset = clamped;
-          this.playerLateralSpeed *= -0.3; // bounce off the bollards
+          this.playerLateralSpeed *= -0.3; // bounce off the barrier
           if (this.scrapeCooldown <= 0) {
             scraped = true;
             this.scrapeCooldown = 0.3;
@@ -574,34 +596,25 @@ class TrafficManager {
         routeInfo = {
           options: ud.options,
           dist: ahead,
-          lane: ud.lockedLane !== null ? ud.lockedLane : window.nearestLaneIndex(this.playerLateralOffset),
-          locked: ud.lockedLane !== null
+          side: ud.lockedSide !== null ? ud.lockedSide : window.sideIndex(this.playerLateralOffset),
+          locked: ud.lockedSide !== null
         };
       }
       if (ahead <= 0) {
         ud.resolved = true;
         if (isAutopilot) return;
-        const lane = ud.lockedLane !== null ? ud.lockedLane : window.nearestLaneIndex(this.playerLateralOffset);
-        let option = ud.options[lane];
-        if (option.id === 'mystery') option = window.resolveMystery();
-        this.applyRouteEffect(option.id);
+        const route = ud.options[ud.lockedSide];
+        this.routePerk = route.perk;
         this.routesTaken++;
-        routeChoice = option;
+        routeChoice = route;
       }
     });
-
-    // Timed route effects
-    if (this.scoreMultTimer > 0) {
-      this.scoreMultTimer -= delta;
-      if (this.scoreMultTimer <= 0) this.scoreMult = 1;
-    }
-    if (this.rushTimer > 0) this.rushTimer -= delta;
 
     // Advance player position along the road
     const distanceDelta = this.playerSpeed * delta;
     this.player.position.z -= distanceDelta;
     this.distanceCovered += distanceDelta;
-    this.score += Math.round(distanceDelta * 1.2 * this.flowStreak * this.scoreMult);
+    this.score += Math.round(distanceDelta * 1.2 * this.flowStreak);
 
     // Update player X and Y from road curve & elevation
     const roadX = this.road.getRoadCurve(this.player.position.z);
@@ -676,6 +689,7 @@ class TrafficManager {
     }
 
     this.vehicles.forEach(v => {
+      if (v.parked) return;
       // Vehicles launched by a nitro ram fly off in a spinning arc, then respawn ahead
       if (v.knocked) {
         const k = v.knocked;
@@ -721,7 +735,7 @@ class TrafficManager {
               if (safeLanes.length > 0) {
                 // Find clear safe lane not occupied by another car
                 const clearLanes = safeLanes.filter(sl => !this.vehicles.some(other =>
-                  other !== v && Math.abs(other.laneOffset - sl) < 1.8 && Math.abs(other.mesh.position.z - v.mesh.position.z) < 18
+                  other !== v && !other.parked && Math.abs(other.laneOffset - sl) < 1.8 && Math.abs(other.mesh.position.z - v.mesh.position.z) < 18
                 ));
                 const candidates = clearLanes.length > 0 ? clearLanes : safeLanes;
                 candidates.sort((a, b) => Math.abs(a - v.laneOffset) - Math.abs(b - v.laneOffset));
@@ -743,9 +757,9 @@ class TrafficManager {
       // 1b. Route junction: AI traffic holds its lane through the bollard zone
       routeGates.forEach(gate => {
         const gap = v.mesh.position.z - gate.position.z;
-        if (gap > -2 && gap < window.ROUTE_LOCK_LENGTH + 20) {
+        if (gap > -30 && gap < window.ROUTE_LOCK_LENGTH + 20) {
           hazardAhead = true;
-          v.targetLaneOffset = window.ROUTE_LANES[window.nearestLaneIndex(v.targetLaneOffset)];
+          v.targetLaneOffset = this.lanes.reduce((p, c) => Math.abs(c - v.targetLaneOffset) < Math.abs(p - v.targetLaneOffset) ? c : p);
           v.isYielding = false;
         }
       });
@@ -754,7 +768,7 @@ class TrafficManager {
       let closestAhead = null;
       let minGapZ = 999;
       this.vehicles.forEach(other => {
-        if (other === v || other.knocked) return;
+        if (other === v || other.knocked || other.parked) return;
         const gapZ = v.mesh.position.z - other.mesh.position.z; // other is ahead of v if gapZ > 0
         if (gapZ > 0 && gapZ < minGapZ) {
           const latDist = Math.abs(other.laneOffset - v.laneOffset);
@@ -787,7 +801,7 @@ class TrafficManager {
 
       // 4. Lateral Anti-Clipping: prevent side-by-side overlap during lane changes
       this.vehicles.forEach(other => {
-        if (other === v || other.knocked) return;
+        if (other === v || other.knocked || other.parked) return;
         const dZ = Math.abs(v.mesh.position.z - other.mesh.position.z);
         if (dZ < 4.5) {
           const dX = v.laneOffset - other.laneOffset;
@@ -815,7 +829,7 @@ class TrafficManager {
         const safeCandidates = candidateIndices.filter(idx => {
           const testLane = this.lanes[idx];
           const blockedByCar = this.vehicles.some(other => {
-            if (other === v) return false;
+            if (other === v || other.parked) return false;
             const sameLane = Math.abs(other.laneOffset - testLane) < 1.8;
             const closeDist = Math.abs(other.mesh.position.z - v.mesh.position.z);
             return sameLane && closeDist < 18;
@@ -950,7 +964,7 @@ class TrafficManager {
         this.knockVehicle(v, playerX);
         this.smashCount++;
         this.bumpStreak();
-        const pts = 400 * this.flowStreak * this.scoreMult;
+        const pts = 400 * this.flowStreak;
         this.score += pts;
         smashOccurred = true;
         events.push({ text: `KHACHA SMASH! +${pts}`, kind: 'smash' });
@@ -973,7 +987,7 @@ class TrafficManager {
         nearMissOccurred = true;
         this.nearMissCount++;
         this.bumpStreak();
-        const pts = 250 * this.flowStreak * this.scoreMult * (this.rushTimer > 0 ? 3 : 1);
+        const pts = 250 * this.flowStreak * (this.routePerk.nearMissMult || 1);
         this.score += pts;
         this.addMeter(20);
         events.push({ text: `NEAR MISS +${pts}`, kind: 'nearmiss' });
@@ -1133,9 +1147,8 @@ class TrafficManager {
       events: events,
       route: routeInfo,
       routeChoice: routeChoice,
-      scraped: scraped,
-      scoreMult: this.scoreMult,
-      rushActive: this.rushTimer > 0
+      routeDecided: routeDecided,
+      scraped: scraped
     };
   }
 

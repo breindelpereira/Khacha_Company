@@ -20,6 +20,16 @@ class RoadManager {
     this.matTerrainRural = new THREE.MeshLambertMaterial({ color: 0x8a724d });  // Warm Indian earth / fields
     this.matTerrainExpress = new THREE.MeshLambertMaterial({ color: 0x2d4a22 }); // Lush green highway verges
     this.matTerrainUrban = new THREE.MeshLambertMaterial({ color: 0x1e293b });  // Dark urban tarmac landscape
+    this.matTerrainGhat = new THREE.MeshLambertMaterial({ color: 0x24522f });   // Monsoon-green Western Ghats
+    this.matShoulderGhat = new THREE.MeshLambertMaterial({ color: 0x57534e });  // Wet laterite gravel
+    this.matTerrainCoast = new THREE.MeshLambertMaterial({ color: 0xe2c48f });  // Konkan beach sand
+    this.matShoulderCoast = new THREE.MeshLambertMaterial({ color: 0xd6b37a });
+    this.matSea = new THREE.MeshLambertMaterial({ color: 0x0ea5e9 });
+    this.matPillar = new THREE.MeshLambertMaterial({ color: 0x9ca3af });
+    this.matParapet = new THREE.MeshLambertMaterial({ color: 0xe5e7eb });
+
+    // Chosen routes: [{ gateZ, routeId, side }], set as the player commits at each junction
+    this.routePlan = [];
 
     this.matMedian = new THREE.MeshLambertMaterial({ color: 0x334155 });   // Concrete median divider
     this.matWhiteLine = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -34,10 +44,45 @@ class RoadManager {
   // 180m - 540m: Expressway & Industrial Corridor (FASTag Toll Plaza at ~300m, Gantries, Streetlights)
   // 540m+: Cyber-Desi Neon Urban Outskirts (IT Park Towers, Concrete Flyovers, Neon Billboards)
   getBiome(z) {
+    const route = this.getRouteAt(z);
+    if (route) return route.biome;
     const dist = Math.abs(z);
     if (dist < 180) return 'rural';
     if (dist < 540) return 'expressway';
     return 'urban';
+  }
+
+  // Route segment governing z: the latest junction gate at or behind z
+  getRouteSegment(z) {
+    let best = null;
+    for (const entry of this.routePlan) {
+      if (entry.gateZ >= z && (!best || entry.gateZ < best.gateZ)) best = entry;
+    }
+    return best ? { entry: best, d: best.gateZ - z } : null;
+  }
+
+  // The route in force at z (only once its scenery starts, ROUTE_START metres past the gate)
+  getRouteAt(z) {
+    const seg = this.getRouteSegment(z);
+    if (!seg || seg.d < window.ROUTE_START) return null;
+    return window.ROUTES[seg.entry.routeId];
+  }
+
+  getRouteShape(z) {
+    const seg = this.getRouteSegment(z);
+    if (!seg) return null;
+    return window.routeShape(window.ROUTES[seg.entry.routeId], seg.d, seg.entry.side);
+  }
+
+  // Commit a route at a junction and rebuild the road beyond the gate in its shape
+  setRoute(gateZ, routeId, side) {
+    this.routePlan = this.routePlan.filter(e => e.gateZ !== gateZ);
+    this.routePlan.push({ gateZ, routeId, side });
+    const limit = gateZ - window.ROUTE_START;
+    const stale = this.chunks.filter(c => c.userData.zPos <= limit);
+    stale.forEach(c => this.scene.remove(c));
+    this.chunks = this.chunks.filter(c => c.userData.zPos > limit);
+    stale.map(c => c.userData.zPos).sort((a, b) => b - a).forEach(z => this.createChunk(z));
   }
 
   // Get road center X offset at distance Z
@@ -46,14 +91,22 @@ class RoadManager {
     const blend = Math.min(Math.max(-z / 60.0, 0), 1.0);
     const zScaled = z * 0.0025;
     const curve = Math.sin(zScaled) * 36 + Math.sin(zScaled * 0.45) * 18;
-    return curve * blend;
+    const shape = this.routePlan.length ? this.getRouteShape(z) : null;
+    return curve * blend + (shape ? shape.curve : 0);
   }
 
-  // Get road elevation Y offset at distance Z (Gentle rolling hills)
-  getRoadElevation(z) {
+  // Ground height (terrain & roadside scenery) - rolling hills plus route hills
+  getGroundElevation(z) {
     const blend = Math.min(Math.max(-z / 80.0, 0), 1.0);
     const zScaled = z * 0.0018;
-    return Math.sin(zScaled * 0.8) * 3.2 * blend;
+    const shape = this.routePlan.length ? this.getRouteShape(z) : null;
+    return Math.sin(zScaled * 0.8) * 3.2 * blend + (shape ? shape.hill : 0);
+  }
+
+  // Road deck height: ground plus any flyover lift
+  getRoadElevation(z) {
+    const shape = this.routePlan.length ? this.getRouteShape(z) : null;
+    return this.getGroundElevation(z) + (shape ? shape.lift : 0);
   }
 
   // Get Road Center Position (Vector3) at any Z
@@ -86,6 +139,7 @@ class RoadManager {
       this.scene.remove(chunk);
     });
     this.chunks = [];
+    this.routePlan = [];
     this.init(startZ);
   }
 
@@ -107,11 +161,14 @@ class RoadManager {
 
     let vertIndex = 0;
     let terrIndex = 0;
+    // On the Konkan coast the left-hand beach slopes down under the sea
+    const coastDrop = this.getBiome(zPos - this.chunkLength * 0.5) === 'coastal' ? 7 : 0;
 
     for (let i = 0; i <= segments; i++) {
       const z = zPos - i * dz;
       const xCenter = this.getRoadCurve(z);
       const yCenter = this.getRoadElevation(z);
+      const yGround = this.getGroundElevation(z);
 
       const hw = this.roadWidth * 0.5;
       const shWidth = 4.0; // Shoulder width
@@ -132,10 +189,10 @@ class RoadManager {
       shRVerts.push(xCenter + hw + shWidth, yCenter - 0.1, z);
 
       // Terrain left and right
-      terrVerts.push(xCenter - hw - shWidth - terrWidth, yCenter - 2.5 + Math.sin(z * 0.01) * 3, z);
-      terrVerts.push(xCenter - hw - shWidth, yCenter - 0.1, z);
-      terrVerts.push(xCenter + hw + shWidth, yCenter - 0.1, z);
-      terrVerts.push(xCenter + hw + shWidth + terrWidth, yCenter - 2.5 + Math.cos(z * 0.01) * 3, z);
+      terrVerts.push(xCenter - hw - shWidth - terrWidth, yGround - 2.5 - coastDrop + Math.sin(z * 0.01) * 3 * (coastDrop ? 0.2 : 1), z);
+      terrVerts.push(xCenter - hw - shWidth, yGround - 0.1, z);
+      terrVerts.push(xCenter + hw + shWidth, yGround - 0.1, z);
+      terrVerts.push(xCenter + hw + shWidth + terrWidth, yGround - 2.5 + Math.cos(z * 0.01) * 3, z);
 
       if (i < segments) {
         // Road quads (2 triangles)
@@ -173,6 +230,12 @@ class RoadManager {
     } else if (biome === 'urban') {
       terrMat = this.matTerrainUrban;
       shMat = this.matShoulderUrban;
+    } else if (biome === 'ghat') {
+      terrMat = this.matTerrainGhat;
+      shMat = this.matShoulderGhat;
+    } else if (biome === 'coastal') {
+      terrMat = this.matTerrainCoast;
+      shMat = this.matShoulderCoast;
     }
 
     // Shoulder meshes
@@ -191,6 +254,9 @@ class RoadManager {
     // Road Markings (Dashed white lane lines & yellow border lines)
     this.addRoadMarkings(group, zPos, segments, dz);
 
+    // Route structures: flyover piers & parapets, the Konkan sea
+    this.addRouteStructures(group, zPos, segments, dz, biome);
+
     // Populate Scenery on this chunk
     const sceneryItems = this.populateChunkScenery(group, zPos);
 
@@ -202,6 +268,51 @@ class RoadManager {
 
     this.scene.add(group);
     this.chunks.push(group);
+  }
+
+  addRouteStructures(group, zPos, segments, dz, biome) {
+    const hw = this.roadWidth * 0.5;
+    for (let i = 0; i <= segments; i += 3) {
+      const z = zPos - i * dz;
+      const deck = this.getRoadElevation(z);
+      const ground = this.getGroundElevation(z);
+      const lift = deck - ground;
+      if (lift < 0.8) continue;
+      const x = this.getRoadCurve(z);
+      const angle = this.getRoadAngle(z);
+      // Hammerhead pier under the deck
+      const pierH = lift + 1.5;
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(2.2, pierH, 1.6), this.matPillar);
+      pier.position.set(x, ground - 1.5 + pierH / 2 - 0.4, z);
+      pier.rotation.y = angle;
+      group.add(pier);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 6, 0.8, 1.8), this.matPillar);
+      cap.position.set(x, deck - 0.6, z);
+      cap.rotation.y = angle;
+      group.add(cap);
+    }
+    // Crash-barrier parapets along the deck edges while elevated
+    for (let i = 0; i < segments; i += 2) {
+      const z = zPos - (i + 1) * dz;
+      const deck = this.getRoadElevation(z);
+      if (deck - this.getGroundElevation(z) < 0.8) continue;
+      const x = this.getRoadCurve(z);
+      const angle = this.getRoadAngle(z);
+      [-1, 1].forEach(side => {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.0, dz * 2 + 0.2), this.matParapet);
+        wall.position.set(x + side * (hw + 3.8), deck + 0.45, z);
+        wall.rotation.y = angle;
+        group.add(wall);
+      });
+    }
+    // Arabian Sea along the left of the Konkan coast
+    if (biome === 'coastal') {
+      const midZ = zPos - this.chunkLength * 0.5;
+      const sea = new THREE.Mesh(new THREE.PlaneGeometry(260, this.chunkLength + 2), this.matSea);
+      sea.rotation.x = -Math.PI / 2;
+      sea.position.set(this.getRoadCurve(midZ) - hw - 4 - 30 - 130, this.getGroundElevation(midZ) - 1.2, midZ);
+      group.add(sea);
+    }
   }
 
   buildRibbonMesh(verts, segments, material) {
@@ -266,8 +377,11 @@ class RoadManager {
     const chunkMidZ = zPos - this.chunkLength * 0.5;
     const xCenter = this.getRoadCurve(chunkMidZ);
     const yCenter = this.getRoadElevation(chunkMidZ);
+    const yGround = this.getGroundElevation(chunkMidZ);
+    const elevated = yCenter - yGround > 0.8; // on the flyover deck
     const angle = this.getRoadAngle(chunkMidZ);
     const biome = this.getBiome(chunkMidZ);
+    const route = this.getRouteAt(chunkMidZ);
 
     // =========================================================================
     // 1. FASTag ELECTRONIC TOLL PLAZA EVENT (Located in Expressway at ~300m and ~900m)
@@ -287,21 +401,20 @@ class RoadManager {
     // =========================================================================
     if (window.isRouteChunk && window.isRouteChunk(zPos, this.chunkLength)) {
       const options = window.pickRouteOptions();
-      const gate = window.sceneryBuilder.createRouteGantry(options, window.ROUTE_LANES);
+      const gate = window.sceneryBuilder.createRouteGantry(options, window.ROUTE_SIDES);
       gate.position.set(xCenter, yCenter, chunkMidZ);
       gate.rotation.y = angle;
-      gate.userData = { isRouteGate: true, options, resolved: false, lockedLane: null };
+      gate.userData = { isRouteGate: true, options, resolved: false, decided: false, lockedSide: null };
       group.add(gate);
       items.push(gate);
 
-      // Bollard rows on the three lane boundaries, following the road curve
-      for (let dz = 2; dz <= window.ROUTE_LOCK_LENGTH; dz += 4) {
+      // Concrete jersey barrier down the centre: splits the carriageways for the lock zone and past the gate
+      for (let dz = -26; dz <= window.ROUTE_LOCK_LENGTH; dz += 4) {
         const bz = chunkMidZ + dz;
-        [-3.6, 0, 3.6].forEach(bx => {
-          const bollard = window.sceneryBuilder.createBollard();
-          bollard.position.set(this.getRoadCurve(bz) + bx, this.getRoadElevation(bz), bz);
-          group.add(bollard);
-        });
+        const wall = window.sceneryBuilder.createJerseyBarrier();
+        wall.position.set(this.getRoadCurve(bz), this.getRoadElevation(bz), bz);
+        wall.rotation.y = this.getRoadAngle(bz);
+        group.add(wall);
       }
     }
     const nearJunction = window.nearRouteJunction ? window.nearRouteJunction(zPos) : false;
@@ -375,14 +488,14 @@ class RoadManager {
         const tower = window.sceneryBuilder.createUrbanBuilding(side, height);
         const dist = this.roadWidth * 0.5 + 16.0 + Math.random() * 20.0;
         const bZ = chunkMidZ + (Math.random() * 20 - 10);
-        tower.position.set(this.getRoadCurve(bZ) + side * dist, this.getRoadElevation(bZ), bZ);
+        tower.position.set(this.getRoadCurve(bZ) + side * dist, this.getGroundElevation(bZ), bZ);
         tower.rotation.y = angle;
         group.add(tower);
         items.push(tower);
       });
 
       // Flyover bridge overpass every ~240m
-      if (Math.abs(zPos % 240) < this.chunkLength) {
+      if (!elevated && !route && Math.abs(zPos % 240) < this.chunkLength) {
         const flyover = window.sceneryBuilder.createFlyover();
         flyover.position.set(xCenter, yCenter, chunkMidZ);
         flyover.rotation.y = angle;
@@ -397,7 +510,7 @@ class RoadManager {
     // =========================================================================
     if ((biome === 'rural' || biome === 'expressway') && Math.abs(zPos % 180) < this.chunkLength) {
       const dhaba = window.sceneryBuilder.createDhaba();
-      dhaba.position.set(xCenter + 16, yCenter, chunkMidZ);
+      dhaba.position.set(xCenter + 16, yGround, chunkMidZ);
       dhaba.rotation.y = angle - Math.PI / 2;
       group.add(dhaba);
       items.push(dhaba);
@@ -407,7 +520,7 @@ class RoadManager {
     // 8. THE INDIE DOG (Rural Biome Only - STRICTLY NO COWS)
     // Lounging calmly by the highway shoulder
     // =========================================================================
-    if (biome === 'rural' && Math.random() < 0.6) {
+    if (biome === 'rural' && !elevated && Math.random() < 0.6) {
       const dogPose = Math.random() < 0.5 ? 'sitting' : 'sleeping';
       const dog = window.sceneryBuilder.createIndieDog(dogPose);
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -421,7 +534,8 @@ class RoadManager {
     // 9. MEME POWER-UP PICKUPS (Every ~180m)
     // Adapts to selected vehicle: Sting Red for Swift, Vimal for Truck, Chai for Auto
     // =========================================================================
-    if (!nearJunction && Math.abs(zPos) > 60 && Math.abs(zPos % 180) < this.chunkLength && Math.abs(zPos - (-300)) > 50 && Math.abs(zPos - (-900)) > 50) {
+    const pickupSpacing = (route && route.perk.pickupSpacing) || 180;
+    if (!nearJunction && Math.abs(zPos) > 60 && Math.abs(zPos % pickupSpacing) < this.chunkLength && Math.abs(zPos - (-300)) > 50 && Math.abs(zPos - (-900)) > 50) {
       const vType = (window.game && window.game.selectedVehicle) || 'auto';
       const pickup = window.sceneryBuilder.createChaiPickup(vType);
       const lanes = [-5.4, -1.8, 1.8, 5.4];
@@ -439,7 +553,7 @@ class RoadManager {
     if (Math.abs(zPos % 150) < this.chunkLength) {
       const billboard = window.sceneryBuilder.createHighwayBillboard(Math.floor(Math.abs(zPos / 150)));
       const side = Math.random() < 0.5 ? -1 : 1;
-      billboard.position.set(xCenter + side * (this.roadWidth * 0.5 + 8.0), yCenter, chunkMidZ);
+      billboard.position.set(xCenter + side * (this.roadWidth * 0.5 + 8.0), yGround, chunkMidZ);
       billboard.rotation.y = angle + (side > 0 ? -Math.PI * 0.45 : Math.PI * 0.45);
       group.add(billboard);
       items.push(billboard);
@@ -448,7 +562,7 @@ class RoadManager {
     // =========================================================================
     // 11. TENDER COCONUT WATER CART (Rural Biome)
     // =========================================================================
-    if (biome === 'rural' && Math.random() < 0.4) {
+    if ((biome === 'rural' || biome === 'coastal') && !elevated && Math.random() < 0.4) {
       const cart = window.sceneryBuilder.createCoconutCart();
       const side = Math.random() < 0.5 ? -1 : 1;
       cart.position.set(xCenter + side * (this.roadWidth * 0.5 + 3.2), yCenter, chunkMidZ + (Math.random() * 16 - 8));
@@ -472,14 +586,28 @@ class RoadManager {
     // 13. BANYAN & GULMOHAR TREES
     // Lush in rural/expressway; sparse in urban
     // =========================================================================
+    // Ghat cliffs: mossy laterite rocks hugging the hillside
+    if (biome === 'ghat') {
+      for (let r = 0; r < 3; r++) {
+        const rock = window.sceneryBuilder.createRockCliff();
+        const side = r === 0 ? 1 : (Math.random() < 0.7 ? -1 : 1);
+        const rZ = zPos - Math.random() * this.chunkLength;
+        rock.position.set(this.getRoadCurve(rZ) + side * (this.roadWidth * 0.5 + 9 + Math.random() * 14), this.getGroundElevation(rZ), rZ);
+        group.add(rock);
+        items.push(rock);
+      }
+    }
+
     const numTrees = biome === 'urban' ? (Math.random() < 0.4 ? 1 : 0) : (Math.floor(Math.random() * 2) + 2);
     for (let t = 0; t < numTrees; t++) {
       const isGulmohar = Math.random() < 0.45;
-      const tree = isGulmohar ? window.sceneryBuilder.createGulmoharTree() : window.sceneryBuilder.createBanyanTree();
-      const side = Math.random() < 0.5 ? -1 : 1;
+      const tree = biome === 'coastal' ? window.sceneryBuilder.createPalmTree()
+        : (isGulmohar ? window.sceneryBuilder.createGulmoharTree() : window.sceneryBuilder.createBanyanTree());
+      // Coconut palms line the land side of the coast
+      const side = biome === 'coastal' ? (Math.random() < 0.75 ? 1 : -1) : (Math.random() < 0.5 ? -1 : 1);
       const dist = this.roadWidth * 0.5 + 6.0 + Math.random() * 15;
       const treeZ = zPos - Math.random() * this.chunkLength;
-      tree.position.set(this.getRoadCurve(treeZ) + side * dist, this.getRoadElevation(treeZ), treeZ);
+      tree.position.set(this.getRoadCurve(treeZ) + side * dist, this.getGroundElevation(treeZ), treeZ);
       tree.scale.setScalar(0.85 + Math.random() * 0.4);
       group.add(tree);
       items.push(tree);
